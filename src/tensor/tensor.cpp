@@ -5,6 +5,7 @@
 #include <cstring>
 #include <numeric>
 #include <sstream>
+#include <stdexcept>
 
 namespace llaisys {
 
@@ -183,8 +184,27 @@ tensor_t Tensor::permute(const std::vector<size_t> &order) const {
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    // 1. check if #num if ok
+    size_t numelems = 1;
+    for (auto s : shape)
+        numelems *= s;
+    if (numelems != this->numel())
+        throw std::runtime_error("Reshape with different number of elements");
+
+    // 2. check if contiguous
+    if (!this->isContiguous())
+        throw std::runtime_error("Reshape on non-contiguous tensor is not supported");
+
+    // 3. compute strides
+    std::vector<ptrdiff_t> strides(shape.size(), 1);
+    size_t stride = 1;
+    for (int i = int(shape.size()) - 1; i >= 0; i--) {
+        strides[i] = stride;
+        stride *= shape[i];
+    }
+
+    TensorMeta new_meta{this->dtype(), shape, strides};
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {

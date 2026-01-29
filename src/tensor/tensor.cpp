@@ -214,8 +214,11 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t new_offset = _offset + _meta.strides[dim] * start * this->elementSize();
+    std::vector<size_t> new_shape = _meta.shape;
+    new_shape[dim] = end - start;
+    TensorMeta new_meta{_meta.dtype, new_shape, _meta.strides};
+    return std::shared_ptr<Tensor>(new Tensor(std::move(new_meta), _storage, new_offset));
 }
 
 void Tensor::load(const void *src_) {

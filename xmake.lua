@@ -84,11 +84,13 @@ target_end()
 target("llaisys-ops")
     set_kind("static")
     add_deps("llaisys-ops-cpu")
+    add_packages("openmp")
 
     set_languages("cxx17")
     set_warnings("all", "error")
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+        add_cxflags("-fopenmp")
     end
     
     add_files("src/ops/*/*.cpp")

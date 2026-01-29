@@ -1,3 +1,4 @@
+add_rules("plugin.compile_commands.autoupdate", {outputdir = "./", lsp = "clangd"})
 add_rules("mode.debug", "mode.release")
 set_encodings("utf-8")
 

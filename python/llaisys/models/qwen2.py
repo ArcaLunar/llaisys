@@ -37,41 +37,42 @@ class Qwen2:
         top_p: float = 0.8,
         temperature: float = 0.8,
     ):
-        array = (ctypes.c_int64 * len(inputs))(*inputs)
-        pos_ids = (ctypes.c_int64 * len(inputs))(*range(len(inputs)))
+        # array = (ctypes.c_int64 * len(inputs))(*inputs)
+        # pos_ids = (ctypes.c_int64 * len(inputs))(*range(len(inputs)))
 
-        # Prefill and get first token
-        answer = inputs
-        output_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
-            self._backend,
-            array,
-            pos_ids,
-            len(inputs),
-            True,  # prefill
-        )
-        answer.append(output_token)
+        # # Prefill and get first token
+        # answer = inputs
+        # output_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
+        #     self._backend,
+        #     array,
+        #     pos_ids,
+        #     len(inputs),
+        #     True,  # prefill
+        # )
+        # answer.append(output_token)
 
-        # # Decode loop
-        for step in range(max_new_tokens - 1):
-            lst = [answer[-1]]
-            pos = [len(answer) - 1]
-            array = (ctypes.c_int64 * 1)(*lst)
-            pos_ids = (ctypes.c_int64 * 1)(*pos)
+        # # # Decode loop
+        # for step in range(max_new_tokens - 1):
+        #     lst = [answer[-1]]
+        #     pos = [len(answer) - 1]
+        #     array = (ctypes.c_int64 * 1)(*lst)
+        #     pos_ids = (ctypes.c_int64 * 1)(*pos)
 
-            output_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
-                self._backend,
-                array,
-                pos_ids,
-                1,
-                False,  # decode
-            )
+        #     output_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
+        #         self._backend,
+        #         array,
+        #         pos_ids,
+        #         1,
+        #         False,  # decode
+        #     )
 
-            if output_token == self.meta.end_token:
-                break
+        #     if output_token == self.meta.end_token:
+        #         break
 
-            answer.append(output_token)
+        #     answer.append(output_token)
 
-        return answer
+        # return answer
+        return self.generate_no_decode(inputs, max_new_tokens)
 
     def __load_config(self, config_path: Path):
         with open(config_path, "r") as f:

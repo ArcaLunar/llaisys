@@ -310,21 +310,21 @@ __C {
                                        model->meta.dh};
             std::vector<usize> v_shape{ntoken, model->meta.nkvh,
                                        model->meta.dh};
-            q_proj = tensorView(q_proj, q_shape.data(),
+            auto q_proj_view = tensorView(q_proj, q_shape.data(),
                                 q_shape.size()); // reshape for RoPE
-            k_proj = tensorView(k_proj, k_shape.data(),
+            auto k_proj_view = tensorView(k_proj, k_shape.data(),
                                 k_shape.size()); // reshape for RoPE
-            v_proj = tensorView(v_proj, v_shape.data(),
+            auto v_proj_view = tensorView(v_proj, v_shape.data(),
                                 v_shape.size()); // reshape for attn
 
-            llaisysROPE(q_proj, q_proj, pos_ids_tensor, model->meta.theta);
-            llaisysROPE(k_proj, k_proj, pos_ids_tensor, model->meta.theta);
+            llaisysROPE(q_proj_view, q_proj_view, pos_ids_tensor, model->meta.theta);
+            llaisysROPE(k_proj_view, k_proj_view, pos_ids_tensor, model->meta.theta);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Completed RoPE encoding for Q and K." << std::endl;
 
             //* 3.d Update KV Cache
             model->kvcaches[layer]->insert(
-                k_proj->tensor, v_proj->tensor, ntoken,
+                k_proj_view->tensor, v_proj_view->tensor, ntoken,
                 model->kvcaches[layer]->getCacheSize());
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Updated KV cache." << std::endl;
@@ -354,11 +354,12 @@ __C {
                                     model->device_id);
 
             LOG_SHAPE("infer().attn", attn_out, "attn_out");
-            LOG_SHAPE("infer().attn", q_proj, "q_proj");
-            LOG_SHAPE("infer().attn", kcache, "kcache");
-            LOG_SHAPE("infer().attn", vcache, "vcache");
+            LOG_SHAPE("infer().attn", q_proj_view, "q_proj_view");
+            LOG_SHAPE("infer().attn", k_proj_view, "k_proj_view");
+            LOG_SHAPE("infer().attn", v_proj_view, "v_proj_view");
             
-            llaisysSelfAttention(attn_out, q_proj, kcache, vcache, scale);
+            // llaisysSelfAttention(attn_out, q_proj, kcache, vcache, scale);
+            llaisysSelfAttention(attn_out, q_proj_view, k_proj_view, v_proj_view, scale);
 
             //* 3.f Output Projection
             tensor attn_proj

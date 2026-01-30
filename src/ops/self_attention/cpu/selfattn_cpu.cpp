@@ -83,6 +83,67 @@ static void self_attn_impl(T *attn_val,
     }
 }
 
+template <typename T>
+static void self_attn_impl_without_openmp(T *attn_val,
+                                          const T *q,
+                                          const T *k,
+                                          const T *v,
+                                          size_t seqlen,
+                                          size_t num_head,
+                                          size_t head_dim,
+                                          size_t kvlen,
+                                          size_t num_kv_head,
+                                          size_t vdim,
+                                          float scale) {
+
+    using usize = std::size_t;
+
+    usize ngroup = num_head / num_kv_head;
+    for (usize s = 0; s < seqlen; s++) {
+        for (usize h = 0; h < num_head; h++) {
+            usize head_k = h / ngroup;
+
+            std::vector<float> scores(kvlen, 0);
+            for (usize kl = 0; kl < kvlen; kl++) {
+                float sum = 0;
+                for (usize d = 0; d < head_dim; d++) {
+                    usize qbase = s * num_head * head_dim + h * head_dim + d;
+                    usize kbase
+                        = kl * num_kv_head * head_dim + head_k * head_dim + d;
+                    sum += casting(float, q[qbase]) * casting(float, k[kbase]);
+                }
+                scores[kl] = sum * scale;
+            }
+
+            usize L = std::min(kvlen, kvlen - seqlen + s + 1);
+            // softmax
+            float max_score = -std::numeric_limits<float>::infinity();
+            for (usize t = 0; t < L; t++)
+                if (scores[t] > max_score)
+                    max_score = scores[t];
+
+            float sum_exp = 0.0f;
+            for (usize t = 0; t < L; t++) {
+                scores[t] = std::exp(scores[t] - max_score);
+                sum_exp += scores[t];
+            }
+            for (usize t = 0; t < L; t++) scores[t] /= sum_exp;
+            for (usize t = L; t < kvlen; t++) scores[t] = 0.0f;
+
+            // PV
+            for (usize t = 0; t < vdim; t++) {
+                float acc = 0.0f;
+                for (usize i = 0; i < L; i++) {
+                    usize vbase = i * num_kv_head * vdim + head_k * vdim + t;
+                    acc += scores[i] * casting(float, v[vbase]);
+                }
+                usize obase = s * num_head * vdim + h * vdim + t;
+                attn_val[obase] = casting(T, acc);
+            }
+        }
+    }
+}
+
 namespace llaisys::ops::cpu {
 
 void self_attn(std::byte *attn_val,
@@ -102,26 +163,26 @@ void self_attn(std::byte *attn_val,
               << std::endl;
     switch (dtype) {
     case LLAISYS_DTYPE_F32:
-        return self_attn_impl(
+        return self_attn_impl_without_openmp(
             recast(float *, attn_val), recast(const float *, q),
             recast(const float *, k), recast(const float *, v), seqlen,
             num_head, head_dim, kvlen, num_kv_head, vdim, scale);
 
     case LLAISYS_DTYPE_F16:
-        return self_attn_impl(recast(llaisys::fp16_t *, attn_val),
-                              recast(const llaisys::fp16_t *, q),
-                              recast(const llaisys::fp16_t *, k),
-                              recast(const llaisys::fp16_t *, v), seqlen,
-                              num_head, head_dim, kvlen, num_kv_head, vdim,
-                              scale);
+        return self_attn_impl_without_openmp(
+            recast(llaisys::fp16_t *, attn_val),
+            recast(const llaisys::fp16_t *, q),
+            recast(const llaisys::fp16_t *, k),
+            recast(const llaisys::fp16_t *, v), seqlen, num_head, head_dim,
+            kvlen, num_kv_head, vdim, scale);
 
     case LLAISYS_DTYPE_BF16:
-        return self_attn_impl(recast(llaisys::bf16_t *, attn_val),
-                              recast(const llaisys::bf16_t *, q),
-                              recast(const llaisys::bf16_t *, k),
-                              recast(const llaisys::bf16_t *, v), seqlen,
-                              num_head, head_dim, kvlen, num_kv_head, vdim,
-                              scale);
+        return self_attn_impl_without_openmp(
+            recast(llaisys::bf16_t *, attn_val),
+            recast(const llaisys::bf16_t *, q),
+            recast(const llaisys::bf16_t *, k),
+            recast(const llaisys::bf16_t *, v), seqlen, num_head, head_dim,
+            kvlen, num_kv_head, vdim, scale);
 
     default:
         EXCEPTION_UNSUPPORTED_DATATYPE(dtype);

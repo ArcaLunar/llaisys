@@ -77,7 +77,7 @@
         if constexpr (!DBG_LOG)                                                \
             break;                                                             \
         std::cerr << "[qwen2.cc:" << stage << "] " << name << " shape: ";      \
-        for (int i = 0, l = tensr->shape().size(); i < l; ++i) {               \
+        for (int i = 0, l = int(tensr->shape().size()); i < l; ++i) {          \
             std::cerr << tensr->shape()[i];                                    \
             if (i != l - 1)                                                    \
                 std::cerr << " x ";                                            \

@@ -33,9 +33,6 @@ void self_attention(
                                        attn_val->deviceId());
 
     if (attn_val->deviceType() == LLAISYS_DEVICE_CPU) {
-        std::cerr << "[self_attention.cpp:self_attention()] Using CPU "
-                     "self-attention implementation."
-                  << std::endl;
         cpu::self_attn(attn_val->data(), q->data(), k->data(), v->data(),
                        seqlen, num_head, head_dim, kvlen, num_kv_head, vdim,
                        scale, attn_val->dtype());

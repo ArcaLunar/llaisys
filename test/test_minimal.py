@@ -34,7 +34,7 @@ tokenizer, hf_model, hf_model_path = load_hf_model(
     device_name="cpu",
 )
 sentence = "Who are you?"
-MAX_TOKENS = 5
+MAX_TOKENS = 128
 
 input_content = tokenizer.apply_chat_template(
     conversation=[{"role": "user", "content": sentence}],
@@ -57,7 +57,7 @@ hf_output = hf_model.generate(
 model = llaisys.models.Qwen2(model_path="./data")
 
 listinput = inputs[0].tolist()
-output = model.generate(listinput, max_new_tokens=MAX_TOKENS)
+output = model.generate_no_decode(listinput, max_new_tokens=MAX_TOKENS)
 # listinput.append(output)
 print(output)
 print(tokenizer.decode(output, skip_special_tokens=True))

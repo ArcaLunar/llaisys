@@ -8,15 +8,15 @@ from ..tensor import Tensor
 from pathlib import Path
 import safetensors
 
-# import torch
+import torch
 import numpy as np
+from tqdm import tqdm
 
 
 DEFAULT_MODEL_PATH = "./data"
 
 
 class Qwen2:
-
     def __init__(
         self,
         model_path=DEFAULT_MODEL_PATH,
@@ -89,7 +89,7 @@ class Qwen2:
                 raise ValueError(
                     f"Unsupported data type: {config.get('torch_dtype', '')}"
                 )
-        # meta.dtype = DataType.F32 # always use fp32 for now
+        meta.dtype = DataType.F32 # always use fp32 for now
         meta.nlayer = config.get("num_hidden_layers", 0)
         meta.nh = config.get("num_attention_heads", 0)
         meta.hs = config.get("hidden_size", 0)
@@ -155,11 +155,20 @@ class Qwen2:
                     short_name, weight_type, layer_idx = self.name_mapping[name_]
                     weight_data = data_.get_tensor(name_)  # load as torch
 
-                    # first convert to fp32 numpy array
-                    weight_data = weight_data.float().numpy()
+                    # Convert to target dtype before numpy conversion
+                    if self.meta.dtype == DataType.BF16:
+                        weight_data = (
+                            weight_data.to(torch.bfloat16).view(torch.uint16).numpy()
+                        )
+                    elif self.meta.dtype == DataType.F16:
+                        weight_data = (
+                            weight_data.to(torch.float16).view(torch.uint16).numpy()
+                        )
+                    else:  # F32
+                        weight_data = weight_data.float().numpy()
 
                     tensor = Tensor(weight_data.shape, self.meta.dtype, self.device)
-                    tensor.load(weight_data.ctypes.data)  # convert to numpy and load
+                    tensor.load(weight_data.ctypes.data)
 
                     # Set weights in the backend
                     LIB_LLAISYS.llaisysQwen2SetWeights(
@@ -168,3 +177,21 @@ class Qwen2:
                         layer_idx,
                         tensor.lib_tensor(),
                     )
+
+    def generate_no_decode(self, inputs: Sequence[int], max_new_tokens: int):
+        answer = inputs
+        for step in tqdm(range(max_new_tokens), desc="Generating"):
+            array = (ctypes.c_int64 * len(answer))(*answer)
+            pos_ids = (ctypes.c_int64 * len(answer))(*range(len(answer)))
+
+            # Prefill and get first token
+            output_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
+                self._backend,
+                array,
+                pos_ids,
+                len(answer),
+                True,  # prefill
+            )
+            answer.append(output_token)
+
+        return answer

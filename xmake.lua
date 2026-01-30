@@ -3,7 +3,7 @@ add_rules("mode.debug", "mode.release")
 set_encodings("utf-8")
 
 add_includedirs("include")
-add_runenvs("OMP_NUM_THREADS", 8)
+add_runenvs("OMP_NUM_THREADS", 4)
 
 -- CPU --
 includes("xmake/cpu.lua")

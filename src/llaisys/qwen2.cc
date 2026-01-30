@@ -11,6 +11,8 @@
 #include <cstdint>
 #include <iostream>
 
+#define DBG_LOG false
+
 #define createTensor(...)                                                      \
     new LlaisysTensor { llaisys::Tensor::create(__VA_ARGS__) }
 
@@ -33,7 +35,10 @@
             model->weights.name = createTensor(                                \
                 ts->shape(), ts->dtype(), model->device, model->device_id);    \
             model->weights.name->tensor = ts;                                  \
-            std::cerr << "[qwen2.cc:setWeights()] Set " #name << std::endl;    \
+            if constexpr (DBG_LOG) {                                           \
+                std::cerr << "[qwen2.cc:setWeights()] Set " #name              \
+                          << std::endl;                                        \
+            }                                                                  \
         } while (0);                                                           \
         break;
 
@@ -50,8 +55,10 @@
             model->weights.name[layer_id] = createTensor(                      \
                 ts->shape(), ts->dtype(), model->device, model->device_id);    \
             model->weights.name[layer_id]->tensor = ts;                        \
-            std::cerr << "[qwen2.cc:setWeights()] Set " #name << " for layer " \
-                      << layer_id << std::endl;                                \
+            if constexpr (DBG_LOG) {                                           \
+                std::cerr << "[qwen2.cc:setWeights()] Set " #name              \
+                          << " for layer " << layer_id << std::endl;           \
+            }                                                                  \
         } while (0);                                                           \
         break;
 
@@ -67,6 +74,8 @@
 
 #define LOG_SHAPE(stage, tensr, name)                                          \
     do {                                                                       \
+        if constexpr (!DBG_LOG)                                                \
+            break;                                                             \
         std::cerr << "[qwen2.cc:" << stage << "] " << name << " shape: ";      \
         for (int i = 0, l = tensr->shape().size(); i < l; ++i) {               \
             std::cerr << tensr->shape()[i];                                    \
@@ -157,7 +166,9 @@ __C {
         /**
          * Display all tensor shape here for debugging
          */
-        std::cerr << "[qwen2.cc:weights()] Model weights shapes:" << std::endl;
+        if constexpr (DBG_LOG)
+            std::cerr << "[qwen2.cc:weights()] Model weights shapes:"
+                      << std::endl;
 
         LOG_SHAPE("weights()", model->weights.in_embed->tensor, "in_embed");
         LOG_SHAPE("weights()", model->weights.out_embed->tensor, "out_embed");
@@ -165,8 +176,9 @@ __C {
 
         auto nlayer = model->meta.nlayer;
         for (size_t i = 0; i < nlayer; ++i) {
-            std::cerr << "[qwen2.cc:weights()] Layer " << i
-                      << " weights:" << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:weights()] Layer " << i
+                          << " weights:" << std::endl;
             LOG_SHAPE("weights()", model->weights.attn_norm_w[i]->tensor,
                       "attn_norm_w");
             LOG_SHAPE("weights()", model->weights.attn_q_w[i]->tensor,
@@ -237,12 +249,15 @@ __C {
         size_t ntoken, bool prefill) {
         //* -1. Do checking
         MODEL_VALIDITY_CHECK(model);
-        std::cerr << "[qwen2.cc:infer()] Start inference." << std::endl;
+        if constexpr (DBG_LOG)
+            std::cerr << "[qwen2.cc:infer()] Start inference." << std::endl;
 
         //* 0. If prefill, clean KV Caches
         if (prefill) {
-            std::cerr << "[qwen2.cc:infer()] Prefill mode: resetting KV caches."
-                      << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr
+                    << "[qwen2.cc:infer()] Prefill mode: resetting KV caches."
+                    << std::endl;
             for (size_t i = 0; i < model->meta.nlayer; ++i)
                 model->kvcaches[i]->reset();
         }
@@ -256,13 +271,16 @@ __C {
         tensor pos_ids_tensor = Tensor::create({ntoken}, LLAISYS_DTYPE_I64,
                                                model->device, model->device_id);
         pos_ids_tensor->load(pos_ids);
-        std::cerr << "[qwen2.cc:infer()] Loaded position ids." << std::endl;
+        if constexpr (DBG_LOG)
+            std::cerr << "[qwen2.cc:infer()] Loaded position ids." << std::endl;
         LOG_SHAPE("infer()", pos_ids_tensor, "pos_ids");
 
         tensor input_tokens = Tensor::create({ntoken}, LLAISYS_DTYPE_I64,
                                              model->device, model->device_id);
         input_tokens->load(token_ids);
-        std::cerr << "[qwen2.cc:infer()] Loaded input token ids." << std::endl;
+        if constexpr (DBG_LOG)
+            std::cerr << "[qwen2.cc:infer()] Loaded input token ids."
+                      << std::endl;
         LOG_SHAPE("infer()", input_tokens, "input_tokens");
 
         //* 2. Token Embedding
@@ -271,14 +289,16 @@ __C {
                              model->device, model->device_id);
         ops::embedding(hidden_states, input_tokens,
                        model->weights.in_embed->tensor);
-        std::cerr << "[qwen2.cc:infer()] Completed token embedding."
-                  << std::endl;
+        if constexpr (DBG_LOG)
+            std::cerr << "[qwen2.cc:infer()] Completed token embedding."
+                      << std::endl;
         LOG_SHAPE("infer()", hidden_states, "hidden_states");
 
         //* 3. Attention Layers
         for (usize layer = 0; layer < model->meta.nlayer; ++layer) {
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": (Mock) Completed layer operation." << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                          << ": (Mock) Completed layer operation." << std::endl;
 
             //* 3.a Record a residual
             tensor residual = hidden_states;
@@ -290,8 +310,10 @@ __C {
             ops::rms_norm(attn_normed, hidden_states,
                           model->weights.attn_norm_w[layer]->tensor,
                           model->meta.epsilon);
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Completed RMS norm before attention." << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                          << ": Completed RMS norm before attention."
+                          << std::endl;
 
             //* 3.c QKV Projection
             tensor q_proj = Tensor::create(
@@ -312,8 +334,9 @@ __C {
             ops::linear(v_proj, attn_normed,
                         model->weights.attn_v_w[layer]->tensor,
                         model->weights.attn_v_b[layer]->tensor);
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Completed QKV projection." << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                          << ": Completed QKV projection." << std::endl;
 
             //* 3.c.1 Reshape to (S, H, D)
             tensor qview
@@ -332,14 +355,18 @@ __C {
                 model->device, model->device_id);
             ops::rope(pos_q, qview, pos_ids_tensor, model->meta.theta);
             ops::rope(pos_k, kview, pos_ids_tensor, model->meta.theta);
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Completed RoPE encoding for Q and K." << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                          << ": Completed RoPE encoding for Q and K."
+                          << std::endl;
 
             //* 3.e Update KV Cache
             model->kvcaches[layer]->insert(
                 pos_k, vview, ntoken, model->kvcaches[layer]->getCacheSize());
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Updated KV cache." << std::endl;
+
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                          << ": Updated KV cache." << std::endl;
 
             //* 3.f Self attention
             float scale = 1.0f / std::sqrt(static_cast<float>(model->meta.dh));
@@ -347,14 +374,26 @@ __C {
             if (prefill)
                 ASSERT(kcache->shape() == pos_k->shape(),
                        "K cache shape mismatch!");
+            else {
+                if constexpr (DBG_LOG)
+                    std::cerr
+                        << "[qwen2.cc:infer()] Decode mode - pos_k shape: ["
+                        << pos_k->shape()[0] << ", " << pos_k->shape()[1]
+                        << ", " << pos_k->shape()[2] << "], "
+                        << "kcache shape: [" << kcache->shape()[0] << ", "
+                        << kcache->shape()[1] << ", " << kcache->shape()[2]
+                        << "]" << std::endl;
+            }
             tensor vcache = model->kvcaches[layer]->getValuesSlice();
 
             tensor attn_out = Tensor::create(
                 {ntoken, model->meta.nh, model->meta.dh}, model->meta.dtype,
                 model->device, model->device_id);
             ops::self_attention(attn_out, pos_q, kcache, vcache, scale);
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Completed self-attention computation." << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                          << ": Completed self-attention computation."
+                          << std::endl;
 
             //* 3.g Output Projection
             tensor attn_proj
@@ -364,15 +403,17 @@ __C {
                 attn_proj,
                 attn_out->view({ntoken, model->meta.nh * model->meta.dh}),
                 model->weights.attn_o_w[layer]->tensor, nullptr);
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Completed attention output projection."
-                      << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                          << ": Completed attention output projection."
+                          << std::endl;
 
             //* 3.h Residual after attention
             ops::add(hidden_states, residual, attn_proj);
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Completed residual addition after attention."
-                      << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                          << ": Completed residual addition after attention."
+                          << std::endl;
             residual = hidden_states;
 
             //* 3.i MLP block
@@ -382,8 +423,9 @@ __C {
             ops::rms_norm(mlp_normed, hidden_states,
                           model->weights.mlp_norm_w[layer]->tensor,
                           model->meta.epsilon);
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Completed RMS norm before MLP." << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                          << ": Completed RMS norm before MLP." << std::endl;
 
             //* 3.j MLP projections
             tensor mlp_gate
@@ -396,16 +438,18 @@ __C {
                         model->weights.mlp_gate_w[layer]->tensor, nullptr);
             ops::linear(mlp_up, mlp_normed,
                         model->weights.mlp_up_w[layer]->tensor, nullptr);
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Completed MLP gate and up projections."
-                      << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                          << ": Completed MLP gate and up projections."
+                          << std::endl;
 
             tensor mlp_down
                 = Tensor::create({ntoken, model->meta.di}, model->meta.dtype,
                                  model->device, model->device_id);
             ops::swiglu(mlp_down, mlp_gate, mlp_up);
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Completed SwiGLU activation." << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                          << ": Completed SwiGLU activation." << std::endl;
 
             //* 3.k Final MLP output projection
             tensor mlp_out
@@ -413,14 +457,17 @@ __C {
                                  model->device, model->device_id);
             ops::linear(mlp_out, mlp_down,
                         model->weights.mlp_down_w[layer]->tensor, nullptr);
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Completed final MLP output projection."
-                      << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                          << ": Completed final MLP output projection."
+                          << std::endl;
 
             //* 3.l Final residual addition
             ops::add(hidden_states, residual, mlp_out);
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Completed final residual addition." << std::endl;
+            if constexpr (DBG_LOG)
+                std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                          << ": Completed final residual addition."
+                          << std::endl;
         }
 
         //* 4. Final transform and output projection
@@ -429,8 +476,9 @@ __C {
                              model->device, model->device_id);
         ops::rms_norm(final_norm, hidden_states,
                       model->weights.out_norm_w->tensor, model->meta.epsilon);
-        std::cerr << "[qwen2.cc:infer()] Completed final RMS norm."
-                  << std::endl;
+        if constexpr (DBG_LOG)
+            std::cerr << "[qwen2.cc:infer()] Completed final RMS norm."
+                      << std::endl;
 
         //* 5. Get logits
         tensor logits
@@ -438,14 +486,17 @@ __C {
                              model->device, model->device_id);
         ops::linear(logits, final_norm, model->weights.out_embed->tensor,
                     nullptr);
-        std::cerr << "[qwen2.cc:infer()] Completed output projection to logits."
-                  << std::endl;
+        if constexpr (DBG_LOG)
+            std::cerr
+                << "[qwen2.cc:infer()] Completed output projection to logits."
+                << std::endl;
 
         //* 6. Get the last token's logits and argmax
         tensor last_token_logits
             = logits->slice(0, ntoken - 1, ntoken); // last token
-        std::cerr << "[qwen2.cc:infer()] Sliced out last token logits."
-                  << std::endl;
+        if constexpr (DBG_LOG)
+            std::cerr << "[qwen2.cc:infer()] Sliced out last token logits."
+                      << std::endl;
         LOG_SHAPE("infer()", logits, "logits");
         LOG_SHAPE("infer()", last_token_logits, "last_token_logits");
 
@@ -456,9 +507,10 @@ __C {
             {1}, model->meta.dtype, model->device, model->device_id);
         ops::argmax(next_token_id_tensor, next_token_logits_tensor,
                     last_token_logits);
-        std::cerr
-            << "[qwen2.cc:infer()] Completed argmax to get next token id: "
-            << *((i64 *)next_token_id_tensor->data()) << std::endl;
+        if constexpr (DBG_LOG)
+            std::cerr
+                << "[qwen2.cc:infer()] Completed argmax to get next token id: "
+                << *((i64 *)next_token_id_tensor->data()) << std::endl;
 
         return *((i64 *)next_token_id_tensor->data());
     }

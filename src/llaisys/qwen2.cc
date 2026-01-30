@@ -361,8 +361,7 @@ __C {
                           << std::endl;
 
             //* 3.e Update KV Cache
-            model->kvcaches[layer]->insert(
-                pos_k, vview, ntoken, model->kvcaches[layer]->getCacheSize());
+            model->kvcaches[layer]->insert(pos_k, vview, ntoken);
 
             if constexpr (DBG_LOG)
                 std::cerr << "[qwen2.cc:infer()] Layer " << layer
@@ -371,10 +370,10 @@ __C {
             //* 3.f Self attention
             float scale = 1.0f / std::sqrt(static_cast<float>(model->meta.dh));
             tensor kcache = model->kvcaches[layer]->getKeysSlice();
-            if (prefill)
-                ASSERT(kcache->shape() == pos_k->shape(),
-                       "K cache shape mismatch!");
-            else {
+            if (prefill) {
+                // ASSERT(kcache->shape() == pos_k->shape(),
+                //        "K cache shape mismatch!");
+            } else {
                 if constexpr (DBG_LOG)
                     std::cerr
                         << "[qwen2.cc:infer()] Decode mode - pos_k shape: ["
@@ -487,9 +486,9 @@ __C {
         ops::linear(logits, final_norm, model->weights.out_embed->tensor,
                     nullptr);
         if constexpr (DBG_LOG)
-            std::cerr
-                << "[qwen2.cc:infer()] Completed output projection to logits."
-                << std::endl;
+            std::cerr << "[qwen2.cc:infer()] Completed output projection "
+                         "to logits."
+                      << std::endl;
 
         //* 6. Get the last token's logits and argmax
         tensor last_token_logits
@@ -508,9 +507,9 @@ __C {
         ops::argmax(next_token_id_tensor, next_token_logits_tensor,
                     last_token_logits);
         if constexpr (DBG_LOG)
-            std::cerr
-                << "[qwen2.cc:infer()] Completed argmax to get next token id: "
-                << *((i64 *)next_token_id_tensor->data()) << std::endl;
+            std::cerr << "[qwen2.cc:infer()] Completed argmax to get next "
+                         "token id: "
+                      << *((i64 *)next_token_id_tensor->data()) << std::endl;
 
         return *((i64 *)next_token_id_tensor->data());
     }

@@ -57,7 +57,7 @@ hf_output = hf_model.generate(
 model = llaisys.models.Qwen2(model_path="./data")
 
 listinput = inputs[0].tolist()
-output = model.generate_no_decode(listinput, max_new_tokens=MAX_TOKENS)
+output = model.generate(listinput, max_new_tokens=MAX_TOKENS)
 # listinput.append(output)
 print(output)
 print(tokenizer.decode(output, skip_special_tokens=True))

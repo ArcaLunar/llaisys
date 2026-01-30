@@ -16,15 +16,19 @@ KVCache::KVCache(usize capacity,
       keys(Tensor::create(
           {capacity, num_kv_head, head_dim}, dtype, device, device_id)),
       values(Tensor::create(
-          {capacity, num_kv_head, vdim}, dtype, device, device_id)) {}
+          {capacity, num_kv_head, vdim}, dtype, device, device_id)) {
+    std::memset(static_cast<std::byte *>(keys->data()), 0,
+                capacity * num_kv_head * head_dim * keys->elementSize());
+    std::memset(static_cast<std::byte *>(values->data()), 0,
+                capacity * num_kv_head * vdim * values->elementSize());
+}
 
 void KVCache::reset() { cache_size = 0; }
 
 void KVCache::insert(const tensor &new_keys,
                      const tensor &new_values,
-                     usize n_new,
-                     usize insert_pos) {
-    if (insert_pos + n_new > capacity)
+                     usize n_new) {
+    if (cache_size + n_new > capacity)
         throw std::runtime_error("KVCache insert position exceeds capacity.");
     if (new_keys->shape()[0] != n_new || new_keys->shape()[1] != num_kv_head
         || new_keys->shape()[2] != head_dim)
@@ -40,18 +44,21 @@ void KVCache::insert(const tensor &new_keys,
         throw std::runtime_error("Cache storage must be contiguous");
 
     do {
-        auto begin = keys->data() + insert_pos * num_kv_head * head_dim;
+        auto begin = static_cast<std::byte *>(keys->data())
+                   + cache_size * num_kv_head * head_dim * keys->elementSize();
         auto numel = n_new * num_kv_head * head_dim;
-        std::memcpy(begin, new_keys->data(), numel * new_keys->elementSize());
+        std::memcpy(begin, static_cast<const std::byte *>(new_keys->data()),
+                    numel * new_keys->elementSize());
     } while (false);
     do {
-        auto begin = values->data() + insert_pos * num_kv_head * vdim;
+        auto begin = static_cast<std::byte *>(values->data())
+                   + cache_size * num_kv_head * vdim * values->elementSize();
         auto numel = n_new * num_kv_head * vdim;
-        std::memcpy(begin, new_values->data(),
+        std::memcpy(begin, static_cast<const std::byte *>(new_values->data()),
                     numel * new_values->elementSize());
     } while (false);
 
-    cache_size = std::max(cache_size, insert_pos + n_new);
+    cache_size += n_new;
 }
 
 KVCache::tensor KVCache::getKeysSlice() {

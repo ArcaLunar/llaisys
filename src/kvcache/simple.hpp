@@ -49,7 +49,7 @@ struct KVCache {
      * @param n_new Number of new key-value pairs to insert.
      * @param insert_pos Position to insert the new key-value pairs.
      */
-    void insert(const tensor &new_keys, const tensor &new_values, usize n_new, usize insert_pos);
+    void insert(const tensor &new_keys, const tensor &new_values, usize n_new);
 
     /**
      * @brief get a slice of keys tensor up to the current cache size.

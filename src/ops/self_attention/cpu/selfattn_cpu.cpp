@@ -3,6 +3,7 @@
 #include "llaisys.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <limits>
 #include <omp.h>
 #include <vector>
@@ -40,11 +41,13 @@ static void self_attn_impl(T *attn_val,
                 size_t qbase = s * num_head * head_dim + h * head_dim;
 
                 for (size_t t = 0; t < L; ++t) {
-                    size_t kbase = t * num_kv_head * head_dim + head_k * head_dim;
+                    size_t kbase
+                        = t * num_kv_head * head_dim + head_k * head_dim;
                     float dot = 0.f;
 #pragma omp simd reduction(+ : dot)
                     for (size_t d = 0; d < head_dim; ++d)
-                        dot += casting(float, q[qbase + d]) * casting(float, k[kbase + d]);
+                        dot += casting(float, q[qbase + d])
+                             * casting(float, k[kbase + d]);
                     float val = dot * scale;
                     sc[t] = val;
                     mx = (val > mx) ? val : mx;
@@ -70,9 +73,11 @@ static void self_attn_impl(T *attn_val,
                     float p = sc[i];
                     const T *vptr = v + i * num_kv_head * vdim + head_k * vdim;
 #pragma omp simd
-                    for (size_t t = 0; t < vdim; ++t) out[t] += p * casting(float, vptr[t]);
+                    for (size_t t = 0; t < vdim; ++t)
+                        out[t] += p * casting(float, vptr[t]);
                 }
-                for (size_t t = 0; t < vdim; ++t) attn_val[obase + t] = casting(T, out[t]);
+                for (size_t t = 0; t < vdim; ++t)
+                    attn_val[obase + t] = casting(T, out[t]);
             }
         }
     }
@@ -92,20 +97,31 @@ void self_attn(std::byte *attn_val,
                size_t vdim,
                float scale,
                llaisysDataType_t dtype) {
+    std::cerr << "[selfattn_cpu.cpp:self_attn()] Using CPU self-attention "
+                 "implementation."
+              << std::endl;
     switch (dtype) {
     case LLAISYS_DTYPE_F32:
-        return self_attn_impl(recast(float *, attn_val), recast(const float *, q), recast(const float *, k),
-                              recast(const float *, v), seqlen, num_head, head_dim, kvlen, num_kv_head, vdim, scale);
+        return self_attn_impl(
+            recast(float *, attn_val), recast(const float *, q),
+            recast(const float *, k), recast(const float *, v), seqlen,
+            num_head, head_dim, kvlen, num_kv_head, vdim, scale);
 
     case LLAISYS_DTYPE_F16:
-        return self_attn_impl(recast(llaisys::fp16_t *, attn_val), recast(const llaisys::fp16_t *, q),
-                              recast(const llaisys::fp16_t *, k), recast(const llaisys::fp16_t *, v), seqlen, num_head,
-                              head_dim, kvlen, num_kv_head, vdim, scale);
+        return self_attn_impl(recast(llaisys::fp16_t *, attn_val),
+                              recast(const llaisys::fp16_t *, q),
+                              recast(const llaisys::fp16_t *, k),
+                              recast(const llaisys::fp16_t *, v), seqlen,
+                              num_head, head_dim, kvlen, num_kv_head, vdim,
+                              scale);
 
     case LLAISYS_DTYPE_BF16:
-        return self_attn_impl(recast(llaisys::bf16_t *, attn_val), recast(const llaisys::bf16_t *, q),
-                              recast(const llaisys::bf16_t *, k), recast(const llaisys::bf16_t *, v), seqlen, num_head,
-                              head_dim, kvlen, num_kv_head, vdim, scale);
+        return self_attn_impl(recast(llaisys::bf16_t *, attn_val),
+                              recast(const llaisys::bf16_t *, q),
+                              recast(const llaisys::bf16_t *, k),
+                              recast(const llaisys::bf16_t *, v), seqlen,
+                              num_head, head_dim, kvlen, num_kv_head, vdim,
+                              scale);
 
     default:
         EXCEPTION_UNSUPPORTED_DATATYPE(dtype);

@@ -237,7 +237,7 @@ __C {
         using usize = size_t;
         using i64 = int64_t;
 
-        //* IMPORTTANT: store pos_ids as tensor on device for RoPE
+        //* IMPORTANT: store pos_ids as tensor on device for RoPE
         tensor pos_ids_tensor = createTensor({ntoken}, LLAISYS_DTYPE_I64,
                                              model->device, model->device_id);
         pos_ids_tensor->tensor->load(pos_ids);
@@ -255,11 +255,6 @@ __C {
         tensor wordvec
             = createTensor({ntoken, model->meta.hs}, model->meta.dtype,
                            model->device, model->device_id);
-        LOG_SHAPE("infer()", model->weights.in_embed, "in_embed");
-        std::cerr << "[DEBUG] dtype of in_embed: "
-                  << static_cast<int>(model->meta.dtype) << std::endl;
-        std::cerr << "[DEBUG] dtype of wordvec: "
-                  << static_cast<int>(wordvec->tensor->dtype()) << std::endl;
         llaisysEmbedding(wordvec, input_ids, model->weights.in_embed);
         std::cerr << "[qwen2.cc:infer()] Completed token embedding."
                   << std::endl;
@@ -284,14 +279,22 @@ __C {
 
             //* 3.b QKV Projection
             tensor q_proj = createTensor(
-                {ntoken, model->meta.nh, model->meta.dh}, model->meta.dtype,
+                {ntoken, model->meta.nh * model->meta.dh}, model->meta.dtype,
                 model->device, model->device_id);
             tensor k_proj = createTensor(
-                {ntoken, model->meta.nkvh, model->meta.dh}, model->meta.dtype,
+                {ntoken, model->meta.nkvh * model->meta.dh}, model->meta.dtype,
                 model->device, model->device_id);
             tensor v_proj = createTensor(
-                {ntoken, model->meta.nkvh, model->meta.dh}, model->meta.dtype,
+                {ntoken, model->meta.nkvh * model->meta.dh}, model->meta.dtype,
                 model->device, model->device_id);
+
+            LOG_SHAPE("infer().qkv", attn_normed, "attn_normed");
+            LOG_SHAPE("infer().qkv", q_proj, "q_proj");
+            LOG_SHAPE("infer().qkv", model->weights.attn_q_w[layer],
+                      "attn_q_w");
+            LOG_SHAPE("infer().qkv", model->weights.attn_q_b[layer],
+                      "attn_q_b");
+
             llaisysLinear(q_proj, attn_normed, model->weights.attn_q_w[layer],
                           model->weights.attn_q_b[layer]);
             llaisysLinear(k_proj, attn_normed, model->weights.attn_k_w[layer],
@@ -302,6 +305,18 @@ __C {
                       << ": Completed QKV projection." << std::endl;
 
             //* 3.c RoPE Encoding for Q, K
+            std::vector<usize> q_shape{ntoken, model->meta.nh, model->meta.dh};
+            std::vector<usize> k_shape{ntoken, model->meta.nkvh,
+                                       model->meta.dh};
+            std::vector<usize> v_shape{ntoken, model->meta.nkvh,
+                                       model->meta.dh};
+            q_proj = tensorView(q_proj, q_shape.data(),
+                                q_shape.size()); // reshape for RoPE
+            k_proj = tensorView(k_proj, k_shape.data(),
+                                k_shape.size()); // reshape for RoPE
+            v_proj = tensorView(v_proj, v_shape.data(),
+                                v_shape.size()); // reshape for attn
+
             llaisysROPE(q_proj, q_proj, pos_ids_tensor, model->meta.theta);
             llaisysROPE(k_proj, k_proj, pos_ids_tensor, model->meta.theta);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
@@ -325,15 +340,24 @@ __C {
                 = createTensor(_kcache->shape(), _kcache->dtype(),
                                _kcache->deviceType(), _kcache->deviceId());
             kcache->tensor = _kcache;
-            LOG_SHAPE("infer().attention", kcache, "kcache");
 
             auto _vcache = model->kvcaches[layer]->getValuesSlice();
             tensor vcache
                 = createTensor(_vcache->shape(), _vcache->dtype(),
                                _vcache->deviceType(), _vcache->deviceId());
             vcache->tensor = _vcache;
-            LOG_SHAPE("infer().attention", vcache, "vcache");
 
+            std::cerr << "[qwen2.cc:infer()] Layer " << layer
+                      << ": Starting self-attention computation." << std::endl;
+            attn_out = createTensor({ntoken, model->meta.nh, model->meta.dh},
+                                    model->meta.dtype, model->device,
+                                    model->device_id);
+
+            LOG_SHAPE("infer().attn", attn_out, "attn_out");
+            LOG_SHAPE("infer().attn", q_proj, "q_proj");
+            LOG_SHAPE("infer().attn", kcache, "kcache");
+            LOG_SHAPE("infer().attn", vcache, "vcache");
+            
             llaisysSelfAttention(attn_out, q_proj, kcache, vcache, scale);
 
             //* 3.f Output Projection

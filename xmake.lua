@@ -116,6 +116,25 @@ target("llaisys-kvcache")
     on_install(function (target) end)
 target_end()
 
+-- target("llaisys-models")
+--     set_kind("static")
+--     add_deps("llaisys-utils")
+--     add_deps("llaisys-core")
+--     add_deps("llaisys-tensor")
+--     add_deps("llaisys-ops")
+--     add_deps("llaisys-kvcache")
+
+--     set_languages("cxx17")
+--     set_warnings("all", "error")
+--     if not is_plat("windows") then
+--         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+--     end
+
+--     add_files("src/llaisys/models/*.cc")
+
+--     on_install(function (target) end)
+-- target_end()
+
 target("llaisys")
     set_kind("shared")
     add_deps("llaisys-utils")
@@ -124,6 +143,7 @@ target("llaisys")
     add_deps("llaisys-tensor")
     add_deps("llaisys-ops")
     add_deps("llaisys-kvcache")
+    -- add_deps("llaisys-models")
 
     set_languages("cxx17")
     set_warnings("all", "error")

@@ -352,7 +352,7 @@ __C {
             tensor attn_out = Tensor::create(
                 {ntoken, model->meta.nh, model->meta.dh}, model->meta.dtype,
                 model->device, model->device_id);
-            ops::self_attention(attn_out, pos_q, pos_k, vview, scale);
+            ops::self_attention(attn_out, pos_q, kcache, vcache, scale);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Completed self-attention computation." << std::endl;
 

@@ -89,7 +89,7 @@ class Qwen2:
                 raise ValueError(
                     f"Unsupported data type: {config.get('torch_dtype', '')}"
                 )
-        meta.dtype = DataType.F32 # always use fp32 for now
+        # meta.dtype = DataType.F32 # always use fp32 for now
         meta.nlayer = config.get("num_hidden_layers", 0)
         meta.nh = config.get("num_attention_heads", 0)
         meta.hs = config.get("hidden_size", 0)

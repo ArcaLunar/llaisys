@@ -33,7 +33,7 @@ tokenizer, hf_model, hf_model_path = load_hf_model(
     model_path="./data",
     device_name="cpu",
 )
-sentence = "Hi, what's your name?"
+sentence = "Who are you?"
 MAX_TOKENS = 5
 
 input_content = tokenizer.apply_chat_template(

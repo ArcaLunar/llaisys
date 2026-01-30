@@ -15,6 +15,7 @@ struct KVCache {
 
     usize capacity;
     usize cache_size;
+
     usize num_kv_head;
     usize head_dim;
     usize vdim;
@@ -58,6 +59,8 @@ struct KVCache {
      * @brief get a slice of values tensor up to the current cache size.
      */
     tensor getValuesSlice();
+
+    usize getCacheSize() const { return cache_size; }
 };
 
 } // namespace llaisys::kvcache::simple

@@ -7,6 +7,7 @@ from ctypes import (
     c_int64,
     c_void_p,
     c_char_p,
+    c_bool,
 )
 import sys
 
@@ -43,7 +44,13 @@ def load_qwen2_model(lib):
     lib.llaisysQwen2SetWeights.argtypes = [c_void_p, c_int, c_int, llaisysTensor_t]
     lib.llaisysQwen2SetWeights.restype = None
 
-    lib.llaisysQwen2ModelInfer.argtypes = [c_void_p, POINTER(c_int64), c_size_t]
+    lib.llaisysQwen2ModelInfer.argtypes = [
+        c_void_p,
+        POINTER(c_int64),
+        POINTER(c_int64),
+        c_size_t,
+        c_bool,
+    ]
     lib.llaisysQwen2ModelInfer.restype = c_int64
 
     lib.llaisysQwen2ModelWeights.argtypes = [c_void_p]

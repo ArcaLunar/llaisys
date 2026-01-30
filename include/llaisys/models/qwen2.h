@@ -2,6 +2,7 @@
 #define LLAISYS_MODELS_QWEN2_H
 
 #include "../tensor.h"
+#include <cstdint>
 #include <string>
 
 __C {
@@ -41,8 +42,16 @@ __C {
     __export struct LlaisysQwen2Weights *llaisysQwen2ModelWeights(
         struct LlaisysQwen2Model * model);
 
+        /**
+         * @brief Inference function for Qwen2 Model. This function combines both
+         * prefill and decode through `prefill` flag.
+         * @note This function will reset KV Caches if `prefill` is true.
+         * 
+         * @param token_ids input token ids
+         * @param pos_ids input position ids, used for RoPE
+         */
     __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model,
-                                            int64_t *token_ids, size_t ntoken);
+                                            int64_t *token_ids, int64_t *pos_ids, size_t ntoken, bool prefill);
 
     __export void llaisysQwen2SetWeights(struct LlaisysQwen2Model * model,
                                          int name, int layer_id,

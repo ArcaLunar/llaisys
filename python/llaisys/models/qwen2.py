@@ -7,6 +7,7 @@ from ..tensor import Tensor
 
 from pathlib import Path
 import safetensors
+
 # import torch
 import numpy as np
 
@@ -36,10 +37,35 @@ class Qwen2:
         top_p: float = 0.8,
         temperature: float = 0.8,
     ):
+        array = (ctypes.c_int64 * len(inputs))(*inputs)
+        pos_ids = (ctypes.c_int64 * len(inputs))(*range(len(inputs)))
 
-        # TODO: Implement generate function
+        # Prefill and get first token
+        answer = inputs
+        output_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
+            self._backend,
+            array,
+            pos_ids,
+            len(inputs),
+            True,  # prefill
+        )
+        answer.append(output_token)
 
-        return []
+        # # Decode loop
+        # for step in range(max_new_tokens - 1):
+        #     array = (ctypes.c_int64 * 1)(answer[-1])
+        #     pos_ids = (ctypes.c_int64 * 1)(len(answer) - 1)
+
+        #     output_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
+        #         self._backend,
+        #         array,
+        #         pos_ids,
+        #         1,
+        #         False,  # decode
+        #     )
+        #     answer.append(output_token)
+
+        return answer
 
     def __load_config(self, config_path: Path):
         with open(config_path, "r") as f:
@@ -120,11 +146,12 @@ class Qwen2:
                     if name_ not in self.name_mapping:
                         raise ValueError(f"Unknown weight name: {name_}")
                     short_name, weight_type, layer_idx = self.name_mapping[name_]
-                    weight_data = data_.get_tensor(name_) # load as torch
+                    weight_data = data_.get_tensor(name_)  # load as torch
 
                     # first convert to fp32 numpy array
                     weight_data = weight_data.float().numpy()
 
+                    print(f"{short_name}.{weight_data.shape=}")
                     tensor = Tensor(weight_data.shape, self.meta.dtype, self.device)
                     tensor.load(weight_data.ctypes.data)  # convert to numpy and load
 
@@ -135,6 +162,3 @@ class Qwen2:
                         layer_idx,
                         tensor.lib_tensor(),
                     )
-
-    def __convert_to_llaisys_tensor(self, tensor: np.ndarray):
-        pass

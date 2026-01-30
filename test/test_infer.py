@@ -68,6 +68,7 @@ def llaisys_infer(
         tokenize=False,
     )
     inputs = tokenizer.encode(input_content)
+    print(f"Input tokens: {inputs}")
     outputs = model.generate(
         inputs,
         max_new_tokens=max_new_tokens,

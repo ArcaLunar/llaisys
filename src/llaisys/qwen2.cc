@@ -344,8 +344,9 @@ __C {
             //* 3.f Self attention
             float scale = 1.0f / std::sqrt(static_cast<float>(model->meta.dh));
             tensor kcache = model->kvcaches[layer]->getKeysSlice();
-            ASSERT(kcache->shape() == pos_k->shape(),
-                   "K cache shape mismatch!");
+            if (prefill)
+                ASSERT(kcache->shape() == pos_k->shape(),
+                       "K cache shape mismatch!");
             tensor vcache = model->kvcaches[layer]->getValuesSlice();
 
             tensor attn_out = Tensor::create(
@@ -442,7 +443,7 @@ __C {
 
         //* 6. Get the last token's logits and argmax
         tensor last_token_logits
-            = logits->slice(ntoken - 1, 0, model->meta.voc); // last token
+            = logits->slice(0, ntoken - 1, ntoken); // last token
         std::cerr << "[qwen2.cc:infer()] Sliced out last token logits."
                   << std::endl;
         LOG_SHAPE("infer()", logits, "logits");

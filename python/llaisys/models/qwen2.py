@@ -52,22 +52,24 @@ class Qwen2:
         answer.append(output_token)
 
         # # Decode loop
-        # for step in range(max_new_tokens - 1):
-        #     array = (ctypes.c_int64 * 1)(answer[-1])
-        #     pos_ids = (ctypes.c_int64 * 1)(len(answer) - 1)
+        for step in range(max_new_tokens - 1):
+            lst = [answer[-1]]
+            pos = [len(answer) - 1]
+            array = (ctypes.c_int64 * 1)(*lst)
+            pos_ids = (ctypes.c_int64 * 1)(*pos)
 
-        #     output_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
-        #         self._backend,
-        #         array,
-        #         pos_ids,
-        #         1,
-        #         False,  # decode
-        #     )
+            output_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
+                self._backend,
+                array,
+                pos_ids,
+                1,
+                False,  # decode
+            )
 
-        #     if output_token == self.meta.end_token:
-        #         break
+            if output_token == self.meta.end_token:
+                break
 
-        #     answer.append(output_token)
+            answer.append(output_token)
 
         return answer
 
@@ -87,7 +89,7 @@ class Qwen2:
                 raise ValueError(
                     f"Unsupported data type: {config.get('torch_dtype', '')}"
                 )
-        # meta.dtype = DataType.F32
+        meta.dtype = DataType.F32 # always use fp32 for now
         meta.nlayer = config.get("num_hidden_layers", 0)
         meta.nh = config.get("num_attention_heads", 0)
         meta.hs = config.get("hidden_size", 0)

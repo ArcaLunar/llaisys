@@ -34,6 +34,7 @@ tokenizer, hf_model, hf_model_path = load_hf_model(
     device_name="cpu",
 )
 sentence = "Hi, what's your name?"
+MAX_TOKENS = 5
 
 input_content = tokenizer.apply_chat_template(
     conversation=[{"role": "user", "content": sentence}],
@@ -46,7 +47,7 @@ inputs = tokenizer.encode(input_content, return_tensors="pt").to("cpu")
 
 hf_output = hf_model.generate(
     inputs,
-    max_new_tokens=1,
+    max_new_tokens=MAX_TOKENS,
     top_k=1,
     top_p=1,
     temperature=1,
@@ -56,7 +57,7 @@ hf_output = hf_model.generate(
 model = llaisys.models.Qwen2(model_path="./data")
 
 listinput = inputs[0].tolist()
-output = model.generate(listinput, max_new_tokens=1)
+output = model.generate(listinput, max_new_tokens=MAX_TOKENS)
 # listinput.append(output)
 print(output)
 print(tokenizer.decode(output, skip_special_tokens=True))

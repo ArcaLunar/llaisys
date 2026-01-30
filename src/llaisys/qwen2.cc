@@ -13,6 +13,7 @@
             exit(1);                                                           \
         }                                                                      \
         model->weights.name = val;                                             \
+        std::cerr << "[qwen2.cc:setWeights()] Set " #name << std::endl;        \
         break;
 
 #define CASE_ARRAY(id, name, val)                                              \
@@ -24,6 +25,8 @@
             exit(1);                                                           \
         }                                                                      \
         model->weights.name[layer_id] = val;                                   \
+        std::cerr << "[qwen2.cc:setWeights()] Set " #name << " for layer "     \
+                  << layer_id << std::endl;                                    \
         break;
 
 // Define some helper functions here, init model weights array/kvcache array,

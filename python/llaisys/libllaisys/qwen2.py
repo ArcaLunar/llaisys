@@ -11,6 +11,7 @@ from ctypes import (
 import sys
 
 from .llaisys_types import llaisysDeviceType_t, llaisysDataType_t
+from .tensor import llaisysTensor_t
 
 
 class LlaisysQwen2Meta(Structure):
@@ -39,7 +40,7 @@ def load_qwen2_model(lib):
     ]
     lib.llaisysQwen2ModelCreate.restype = c_void_p
 
-    lib.llaisysQwen2SetWeights.argtypes = [c_void_p, c_int, c_int, c_void_p]
+    lib.llaisysQwen2SetWeights.argtypes = [c_void_p, c_int, c_int, llaisysTensor_t]
     lib.llaisysQwen2SetWeights.restype = None
 
     lib.llaisysQwen2ModelInfer.argtypes = [c_void_p, POINTER(c_int64), c_size_t]

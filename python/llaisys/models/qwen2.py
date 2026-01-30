@@ -1,10 +1,14 @@
+import ctypes
 import json
 from typing import Sequence
 from ..libllaisys import LIB_LLAISYS, LlaisysQwen2Meta
 from ..libllaisys import DeviceType, DataType
+from ..tensor import Tensor
 
 from pathlib import Path
 import safetensors
+# import torch
+import numpy as np
 
 
 DEFAULT_MODEL_PATH = "./data"
@@ -22,12 +26,7 @@ class Qwen2:
 
         model_path = Path(model_path)
         self.__load_config(model_path / "config.json")
-
-        for file in sorted(model_path.glob("*.safetensors")):
-            data_ = safetensors.safe_open(file, framework="numpy", device="cpu")
-            for name_ in data_.keys():
-                ## TODO: load the model weights
-                pass
+        self.__load_weights(model_path)
 
     def generate(
         self,
@@ -70,20 +69,72 @@ class Qwen2:
         meta.theta = config.get("rope_theta", 1000000.0)
         meta.end_token = config.get("eos_token_id", 0)
 
-        print(
-            meta.dtype,
-            meta.nlayer,
-            meta.hs,
-            meta.nh,
-            meta.nkvh,
-            meta.dh,
-            meta.di,
-            meta.maxseq,
-            meta.voc,
-            meta.epsilon,
-            meta.theta,
-            meta.end_token,
+        self.meta = meta
+
+        # Init model
+        self._backend = LIB_LLAISYS.llaisysQwen2ModelCreate(
+            ctypes.byref(self.meta),
+            self.device,
+            None,
+            0,
         )
 
+    def __get_name_mapping(self, weights_folder: Path):
+        self.name_mapping: dict[str, tuple[str, int, int]] = {
+            # (short name, indicator of weight type, optional layer index)
+            # see: llaisys/qwen2.cc:setWeights()
+            "model.embed_tokens.weight": ("in_embed", 0, -1),
+            "lm_head.weight": ("out_embed", 1, -1),
+            "model.norm.weight": ("out_norm_w", 2, -1),
+        }
+
+        for layer_idx in range(self.meta.nlayer):
+            prefix = f"model.layers.{layer_idx}"
+            self.name_mapping.update(
+                {
+                    f"{prefix}.input_layernorm.weight": ("attn_norm_w", 3, layer_idx),
+                    f"{prefix}.self_attn.q_proj.weight": ("attn_q_w", 4, layer_idx),
+                    f"{prefix}.self_attn.q_proj.bias": ("attn_q_b", 5, layer_idx),
+                    f"{prefix}.self_attn.k_proj.weight": ("attn_k_w", 6, layer_idx),
+                    f"{prefix}.self_attn.k_proj.bias": ("attn_k_b", 7, layer_idx),
+                    f"{prefix}.self_attn.v_proj.weight": ("attn_v_w", 8, layer_idx),
+                    f"{prefix}.self_attn.v_proj.bias": ("attn_v_b", 9, layer_idx),
+                    f"{prefix}.self_attn.o_proj.weight": ("attn_o_w", 10, layer_idx),
+                    f"{prefix}.post_attention_layernorm.weight": (
+                        "mlp_norm_w",
+                        11,
+                        layer_idx,
+                    ),
+                    f"{prefix}.mlp.gate_proj.weight": ("mlp_gate_w", 12, layer_idx),
+                    f"{prefix}.mlp.up_proj.weight": ("mlp_up_w", 13, layer_idx),
+                    f"{prefix}.mlp.down_proj.weight": ("mlp_down_w", 14, layer_idx),
+                }
+            )
+
     def __load_weights(self, weights_folder: Path):
-        name_mapping: dict[str, tuple[str, int | None]] = {}
+        self.__get_name_mapping(weights_folder)
+
+        for file in sorted(weights_folder.glob("*.safetensors")):
+            with safetensors.safe_open(file, framework="pt", device="cpu") as data_:
+                for name_ in data_.keys():
+                    if name_ not in self.name_mapping:
+                        raise ValueError(f"Unknown weight name: {name_}")
+                    short_name, weight_type, layer_idx = self.name_mapping[name_]
+                    weight_data = data_.get_tensor(name_) # load as torch
+
+                    # first convert to fp32 numpy array
+                    weight_data = weight_data.float().numpy()
+
+                    tensor = Tensor(weight_data.shape, self.meta.dtype, self.device)
+                    tensor.load(weight_data.ctypes.data)  # convert to numpy and load
+
+                    # Set weights in the backend
+                    LIB_LLAISYS.llaisysQwen2SetWeights(
+                        self._backend,
+                        weight_type,
+                        layer_idx,
+                        tensor.lib_tensor(),
+                    )
+
+    def __convert_to_llaisys_tensor(self, tensor: np.ndarray):
+        pass

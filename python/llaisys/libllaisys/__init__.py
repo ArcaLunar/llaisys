@@ -33,7 +33,6 @@ def load_shared_library():
         raise FileNotFoundError(f"Shared library not found: {lib_path}")
 
     lib = ctypes.CDLL(str(lib_path))
-    print(lib.__dict__)
     return lib
 
 

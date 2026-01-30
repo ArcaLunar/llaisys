@@ -63,6 +63,10 @@ class Qwen2:
         #         1,
         #         False,  # decode
         #     )
+
+        #     if output_token == self.meta.end_token:
+        #         break
+
         #     answer.append(output_token)
 
         return answer
@@ -83,6 +87,7 @@ class Qwen2:
                 raise ValueError(
                     f"Unsupported data type: {config.get('torch_dtype', '')}"
                 )
+        # meta.dtype = DataType.F32
         meta.nlayer = config.get("num_hidden_layers", 0)
         meta.nh = config.get("num_attention_heads", 0)
         meta.hs = config.get("hidden_size", 0)
@@ -151,7 +156,6 @@ class Qwen2:
                     # first convert to fp32 numpy array
                     weight_data = weight_data.float().numpy()
 
-                    print(f"{short_name}.{weight_data.shape=}")
                     tensor = Tensor(weight_data.shape, self.meta.dtype, self.device)
                     tensor.load(weight_data.ctypes.data)  # convert to numpy and load
 

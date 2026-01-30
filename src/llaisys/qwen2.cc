@@ -14,6 +14,12 @@
 #define createTensor(...)                                                      \
     new LlaisysTensor { llaisys::Tensor::create(__VA_ARGS__) }
 
+#define loadTensor(ts)                                                         \
+    [&]() {                                                                    \
+        auto t = new LlaisysTensor{ts};                                        \
+        return t;                                                              \
+    }()
+
 #define CASE(id, name, val)                                                    \
     case id:                                                                   \
         do {                                                                   \
@@ -62,8 +68,8 @@
 #define LOG_SHAPE(stage, tensr, name)                                          \
     do {                                                                       \
         std::cerr << "[qwen2.cc:" << stage << "] " << name << " shape: ";      \
-        for (int i = 0, l = tensr->tensor->ndim(); i < l; ++i) {               \
-            std::cerr << tensr->tensor->shape()[i];                            \
+        for (int i = 0, l = tensr->shape().size(); i < l; ++i) {               \
+            std::cerr << tensr->shape()[i];                                    \
             if (i != l - 1)                                                    \
                 std::cerr << " x ";                                            \
         }                                                                      \
@@ -153,27 +159,38 @@ __C {
          */
         std::cerr << "[qwen2.cc:weights()] Model weights shapes:" << std::endl;
 
-        LOG_SHAPE("weights()", model->weights.in_embed, "in_embed");
-        LOG_SHAPE("weights()", model->weights.out_embed, "out_embed");
-        LOG_SHAPE("weights()", model->weights.out_norm_w, "out_norm_w");
+        LOG_SHAPE("weights()", model->weights.in_embed->tensor, "in_embed");
+        LOG_SHAPE("weights()", model->weights.out_embed->tensor, "out_embed");
+        LOG_SHAPE("weights()", model->weights.out_norm_w->tensor, "out_norm_w");
 
         auto nlayer = model->meta.nlayer;
         for (size_t i = 0; i < nlayer; ++i) {
             std::cerr << "[qwen2.cc:weights()] Layer " << i
                       << " weights:" << std::endl;
-            LOG_SHAPE("weights()", model->weights.attn_norm_w[i],
+            LOG_SHAPE("weights()", model->weights.attn_norm_w[i]->tensor,
                       "attn_norm_w");
-            LOG_SHAPE("weights()", model->weights.attn_q_w[i], "attn_q_w");
-            LOG_SHAPE("weights()", model->weights.attn_q_b[i], "attn_q_b");
-            LOG_SHAPE("weights()", model->weights.attn_k_w[i], "attn_k_w");
-            LOG_SHAPE("weights()", model->weights.attn_k_b[i], "attn_k_b");
-            LOG_SHAPE("weights()", model->weights.attn_v_w[i], "attn_v_w");
-            LOG_SHAPE("weights()", model->weights.attn_v_b[i], "attn_v_b");
-            LOG_SHAPE("weights()", model->weights.attn_o_w[i], "attn_o_w");
-            LOG_SHAPE("weights()", model->weights.mlp_norm_w[i], "mlp_norm_w");
-            LOG_SHAPE("weights()", model->weights.mlp_gate_w[i], "mlp_gate_w");
-            LOG_SHAPE("weights()", model->weights.mlp_up_w[i], "mlp_up_w");
-            LOG_SHAPE("weights()", model->weights.mlp_down_w[i], "mlp_down_w");
+            LOG_SHAPE("weights()", model->weights.attn_q_w[i]->tensor,
+                      "attn_q_w");
+            LOG_SHAPE("weights()", model->weights.attn_q_b[i]->tensor,
+                      "attn_q_b");
+            LOG_SHAPE("weights()", model->weights.attn_k_w[i]->tensor,
+                      "attn_k_w");
+            LOG_SHAPE("weights()", model->weights.attn_k_b[i]->tensor,
+                      "attn_k_b");
+            LOG_SHAPE("weights()", model->weights.attn_v_w[i]->tensor,
+                      "attn_v_w");
+            LOG_SHAPE("weights()", model->weights.attn_v_b[i]->tensor,
+                      "attn_v_b");
+            LOG_SHAPE("weights()", model->weights.attn_o_w[i]->tensor,
+                      "attn_o_w");
+            LOG_SHAPE("weights()", model->weights.mlp_norm_w[i]->tensor,
+                      "mlp_norm_w");
+            LOG_SHAPE("weights()", model->weights.mlp_gate_w[i]->tensor,
+                      "mlp_gate_w");
+            LOG_SHAPE("weights()", model->weights.mlp_up_w[i]->tensor,
+                      "mlp_up_w");
+            LOG_SHAPE("weights()", model->weights.mlp_down_w[i]->tensor,
+                      "mlp_down_w");
         }
 
         return &model->weights;
@@ -212,7 +229,7 @@ __C {
             exit(1);
         }
 
-        LOG_SHAPE("setWeights()", tensor, "weight tensor from Python");
+        LOG_SHAPE("setWeights()", tensor->tensor, "weight tensor from Python");
     }
 
     __export int64_t llaisysQwen2ModelInfer(
@@ -220,290 +237,229 @@ __C {
         size_t ntoken, bool prefill) {
         //* -1. Do checking
         MODEL_VALIDITY_CHECK(model);
+        std::cerr << "[qwen2.cc:infer()] Start inference." << std::endl;
 
-        auto nlayer = model->meta.nlayer;
         //* 0. If prefill, clean KV Caches
         if (prefill) {
             std::cerr << "[qwen2.cc:infer()] Prefill mode: resetting KV caches."
                       << std::endl;
-            for (size_t i = 0; i < nlayer; ++i) model->kvcaches[i]->reset();
+            for (size_t i = 0; i < model->meta.nlayer; ++i)
+                model->kvcaches[i]->reset();
         }
 
-        /**
-         *! MODEL INFERENCE LOGIC
-         */
+        //* 1. Copy inputs into tensor
         using namespace llaisys;
-        using tensor = LlaisysTensor *;
+        using tensor = tensor_t;
         using usize = size_t;
         using i64 = int64_t;
 
-        //* IMPORTANT: store pos_ids as tensor on device for RoPE
-        tensor pos_ids_tensor = createTensor({ntoken}, LLAISYS_DTYPE_I64,
-                                             model->device, model->device_id);
-        pos_ids_tensor->tensor->load(pos_ids);
+        tensor pos_ids_tensor = Tensor::create({ntoken}, LLAISYS_DTYPE_I64,
+                                               model->device, model->device_id);
+        pos_ids_tensor->load(pos_ids);
         std::cerr << "[qwen2.cc:infer()] Loaded position ids." << std::endl;
         LOG_SHAPE("infer()", pos_ids_tensor, "pos_ids");
 
-        //* 1. Copy inputs into tensor
-        tensor input_ids = createTensor({ntoken}, LLAISYS_DTYPE_I64,
-                                        model->device, model->device_id);
-        input_ids->tensor->load(token_ids);
+        tensor input_tokens = Tensor::create({ntoken}, LLAISYS_DTYPE_I64,
+                                             model->device, model->device_id);
+        input_tokens->load(token_ids);
         std::cerr << "[qwen2.cc:infer()] Loaded input token ids." << std::endl;
-        LOG_SHAPE("infer()", input_ids, "input_ids");
+        LOG_SHAPE("infer()", input_tokens, "input_tokens");
 
         //* 2. Token Embedding
-        tensor wordvec
-            = createTensor({ntoken, model->meta.hs}, model->meta.dtype,
-                           model->device, model->device_id);
-        llaisysEmbedding(wordvec, input_ids, model->weights.in_embed);
+        tensor hidden_states
+            = Tensor::create({ntoken, model->meta.hs}, model->meta.dtype,
+                             model->device, model->device_id);
+        ops::embedding(hidden_states, input_tokens,
+                       model->weights.in_embed->tensor);
         std::cerr << "[qwen2.cc:infer()] Completed token embedding."
                   << std::endl;
-        LOG_SHAPE("infer()", wordvec, "wordvec");
+        LOG_SHAPE("infer()", hidden_states, "hidden_states");
 
         //* 3. Attention Layers
-        for (usize layer = 0; layer < nlayer; ++layer) {
+        for (usize layer = 0; layer < model->meta.nlayer; ++layer) {
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Starting RMS norm before attention." << std::endl;
-            //* 3.0 Record a residual
-            tensor residual = wordvec;
+                      << ": (Mock) Completed layer operation." << std::endl;
 
-            //* 3.a RMS Norm before Attention
+            //* 3.a Record a residual
+            tensor residual = hidden_states;
+
+            //* 3.b RMS Norm before Attention
             tensor attn_normed
-                = createTensor({ntoken, model->meta.hs}, model->meta.dtype,
-                               model->device, model->device_id);
-            llaisysRmsNorm(attn_normed, wordvec,
-                           model->weights.attn_norm_w[layer],
-                           model->meta.epsilon);
+                = Tensor::create({ntoken, model->meta.hs}, model->meta.dtype,
+                                 model->device, model->device_id);
+            ops::rms_norm(attn_normed, hidden_states,
+                          model->weights.attn_norm_w[layer]->tensor,
+                          model->meta.epsilon);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Completed RMS norm before attention." << std::endl;
 
-            //* 3.b QKV Projection
-            tensor q_proj = createTensor(
+            //* 3.c QKV Projection
+            tensor q_proj = Tensor::create(
                 {ntoken, model->meta.nh * model->meta.dh}, model->meta.dtype,
                 model->device, model->device_id);
-            tensor k_proj = createTensor(
+            tensor k_proj = Tensor::create(
                 {ntoken, model->meta.nkvh * model->meta.dh}, model->meta.dtype,
                 model->device, model->device_id);
-            tensor v_proj = createTensor(
+            tensor v_proj = Tensor::create(
                 {ntoken, model->meta.nkvh * model->meta.dh}, model->meta.dtype,
                 model->device, model->device_id);
-
-            LOG_SHAPE("infer().qkv", attn_normed, "attn_normed");
-            LOG_SHAPE("infer().qkv", q_proj, "q_proj");
-            LOG_SHAPE("infer().qkv", model->weights.attn_q_w[layer],
-                      "attn_q_w");
-            LOG_SHAPE("infer().qkv", model->weights.attn_q_b[layer],
-                      "attn_q_b");
-
-            llaisysLinear(q_proj, attn_normed, model->weights.attn_q_w[layer],
-                          model->weights.attn_q_b[layer]);
-            llaisysLinear(k_proj, attn_normed, model->weights.attn_k_w[layer],
-                          model->weights.attn_k_b[layer]);
-            llaisysLinear(v_proj, attn_normed, model->weights.attn_v_w[layer],
-                          model->weights.attn_v_b[layer]);
+            ops::linear(q_proj, attn_normed,
+                        model->weights.attn_q_w[layer]->tensor,
+                        model->weights.attn_q_b[layer]->tensor);
+            ops::linear(k_proj, attn_normed,
+                        model->weights.attn_k_w[layer]->tensor,
+                        model->weights.attn_k_b[layer]->tensor);
+            ops::linear(v_proj, attn_normed,
+                        model->weights.attn_v_w[layer]->tensor,
+                        model->weights.attn_v_b[layer]->tensor);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Completed QKV projection." << std::endl;
 
-            //* 3.c RoPE Encoding for Q, K
-            std::vector<usize> q_shape{ntoken, model->meta.nh, model->meta.dh};
-            std::vector<usize> k_shape{ntoken, model->meta.nkvh,
-                                       model->meta.dh};
-            std::vector<usize> v_shape{ntoken, model->meta.nkvh,
-                                       model->meta.dh};
-            auto q_proj_view = tensorView(q_proj, q_shape.data(),
-                                q_shape.size()); // reshape for RoPE
-            auto k_proj_view = tensorView(k_proj, k_shape.data(),
-                                k_shape.size()); // reshape for RoPE
-            auto v_proj_view = tensorView(v_proj, v_shape.data(),
-                                v_shape.size()); // reshape for attn
+            //* 3.c.1 Reshape to (S, H, D)
+            tensor qview
+                = q_proj->view({ntoken, model->meta.nh, model->meta.dh});
+            tensor kview
+                = k_proj->view({ntoken, model->meta.nkvh, model->meta.dh});
+            tensor vview
+                = v_proj->view({ntoken, model->meta.nkvh, model->meta.dh});
 
-            llaisysROPE(q_proj_view, q_proj_view, pos_ids_tensor, model->meta.theta);
-            llaisysROPE(k_proj_view, k_proj_view, pos_ids_tensor, model->meta.theta);
+            //* 3.d RoPE Encoding for Q, K
+            tensor pos_q = Tensor::create(
+                {ntoken, model->meta.nh, model->meta.dh}, model->meta.dtype,
+                model->device, model->device_id);
+            tensor pos_k = Tensor::create(
+                {ntoken, model->meta.nkvh, model->meta.dh}, model->meta.dtype,
+                model->device, model->device_id);
+            ops::rope(pos_q, qview, pos_ids_tensor, model->meta.theta);
+            ops::rope(pos_k, kview, pos_ids_tensor, model->meta.theta);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Completed RoPE encoding for Q and K." << std::endl;
 
-            //* 3.d Update KV Cache
+            //* 3.e Update KV Cache
             model->kvcaches[layer]->insert(
-                k_proj_view->tensor, v_proj_view->tensor, ntoken,
-                model->kvcaches[layer]->getCacheSize());
+                pos_k, vview, ntoken, model->kvcaches[layer]->getCacheSize());
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Updated KV cache." << std::endl;
 
-            //* 3.e Self-Attention
-            tensor attn_out = createTensor(
+            //* 3.f Self attention
+            float scale = 1.0f / std::sqrt(static_cast<float>(model->meta.dh));
+            tensor kcache = model->kvcaches[layer]->getKeysSlice();
+            ASSERT(kcache->shape() == pos_k->shape(),
+                   "K cache shape mismatch!");
+            tensor vcache = model->kvcaches[layer]->getValuesSlice();
+
+            tensor attn_out = Tensor::create(
                 {ntoken, model->meta.nh, model->meta.dh}, model->meta.dtype,
                 model->device, model->device_id);
-            float scale = 1.0f / std::sqrt(static_cast<float>(model->meta.dh));
-
-            auto _kcache = model->kvcaches[layer]->getKeysSlice();
-            tensor kcache
-                = createTensor(_kcache->shape(), _kcache->dtype(),
-                               _kcache->deviceType(), _kcache->deviceId());
-            kcache->tensor = _kcache;
-
-            auto _vcache = model->kvcaches[layer]->getValuesSlice();
-            tensor vcache
-                = createTensor(_vcache->shape(), _vcache->dtype(),
-                               _vcache->deviceType(), _vcache->deviceId());
-            vcache->tensor = _vcache;
-
+            ops::self_attention(attn_out, pos_q, pos_k, vview, scale);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Starting self-attention computation." << std::endl;
-            attn_out = createTensor({ntoken, model->meta.nh, model->meta.dh},
-                                    model->meta.dtype, model->device,
-                                    model->device_id);
+                      << ": Completed self-attention computation." << std::endl;
 
-            LOG_SHAPE("infer().attn", attn_out, "attn_out");
-            LOG_SHAPE("infer().attn", q_proj_view, "q_proj_view");
-            LOG_SHAPE("infer().attn", k_proj_view, "k_proj_view");
-            LOG_SHAPE("infer().attn", v_proj_view, "v_proj_view");
-            
-            // llaisysSelfAttention(attn_out, q_proj, kcache, vcache, scale);
-            llaisysSelfAttention(attn_out, q_proj_view, k_proj_view, v_proj_view, scale);
-
-            //* 3.f Output Projection
+            //* 3.g Output Projection
             tensor attn_proj
-                = createTensor({ntoken, model->meta.hs}, model->meta.dtype,
-                               model->device, model->device_id);
-            llaisysLinear(attn_proj, attn_out, model->weights.attn_o_w[layer],
-                          nullptr); // no bias
+                = Tensor::create({ntoken, model->meta.hs}, model->meta.dtype,
+                                 model->device, model->device_id);
+            ops::linear(
+                attn_proj,
+                attn_out->view({ntoken, model->meta.nh * model->meta.dh}),
+                model->weights.attn_o_w[layer]->tensor, nullptr);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Completed attention output projection."
                       << std::endl;
 
-            //* 3.g Residual after attention
-            llaisysAdd(wordvec, residual, attn_proj);
+            //* 3.h Residual after attention
+            ops::add(hidden_states, residual, attn_proj);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Completed residual addition after attention."
                       << std::endl;
-
-            //* 3.h update residual
-            residual = wordvec;
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Starting MLP block." << std::endl;
+            residual = hidden_states;
 
             //* 3.i MLP block
             tensor mlp_normed
-                = createTensor({ntoken, model->meta.hs}, model->meta.dtype,
-                               model->device, model->device_id);
-            llaisysRmsNorm(mlp_normed, wordvec,
-                           model->weights.mlp_norm_w[layer],
-                           model->meta.epsilon);
+                = Tensor::create({ntoken, model->meta.hs}, model->meta.dtype,
+                                 model->device, model->device_id);
+            ops::rms_norm(mlp_normed, hidden_states,
+                          model->weights.mlp_norm_w[layer]->tensor,
+                          model->meta.epsilon);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Completed RMS norm before MLP." << std::endl;
 
             //* 3.j MLP projections
             tensor mlp_gate
-                = createTensor({ntoken, model->meta.di}, model->meta.dtype,
-                               model->device, model->device_id);
+                = Tensor::create({ntoken, model->meta.di}, model->meta.dtype,
+                                 model->device, model->device_id);
             tensor mlp_up
-                = createTensor({ntoken, model->meta.dh}, model->meta.dtype,
-                               model->device, model->device_id);
-            tensor mlp_down
-                = createTensor({ntoken, model->meta.hs}, model->meta.dtype,
-                               model->device, model->device_id);
-            llaisysLinear(mlp_gate, mlp_normed,
-                          model->weights.mlp_gate_w[layer], nullptr); // no bias
-            llaisysLinear(mlp_up, mlp_normed, model->weights.mlp_up_w[layer],
-                          nullptr); // no bias
+                = Tensor::create({ntoken, model->meta.di}, model->meta.dtype,
+                                 model->device, model->device_id);
+            ops::linear(mlp_gate, mlp_normed,
+                        model->weights.mlp_gate_w[layer]->tensor, nullptr);
+            ops::linear(mlp_up, mlp_normed,
+                        model->weights.mlp_up_w[layer]->tensor, nullptr);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Completed MLP gate and up projections."
                       << std::endl;
 
-            llaisysSwiGLU(mlp_down, mlp_gate, mlp_up);
+            tensor mlp_down
+                = Tensor::create({ntoken, model->meta.di}, model->meta.dtype,
+                                 model->device, model->device_id);
+            ops::swiglu(mlp_down, mlp_gate, mlp_up);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Completed SwiGLU activation." << std::endl;
 
             //* 3.k Final MLP output projection
             tensor mlp_out
-                = createTensor({ntoken, model->meta.hs}, model->meta.dtype,
-                               model->device, model->device_id);
-            llaisysLinear(mlp_out, mlp_down, model->weights.mlp_down_w[layer],
-                          nullptr); // no bias
+                = Tensor::create({ntoken, model->meta.hs}, model->meta.dtype,
+                                 model->device, model->device_id);
+            ops::linear(mlp_out, mlp_down,
+                        model->weights.mlp_down_w[layer]->tensor, nullptr);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Completed final MLP output projection."
                       << std::endl;
 
             //* 3.l Final residual addition
-            llaisysAdd(wordvec, residual, mlp_out);
+            ops::add(hidden_states, residual, mlp_out);
             std::cerr << "[qwen2.cc:infer()] Layer " << layer
                       << ": Completed final residual addition." << std::endl;
-
-            //* 3.final clean up all intermediate tensors in this layer
-            delete attn_normed;
-            delete q_proj;
-            delete k_proj;
-            delete v_proj;
-            delete attn_out;
-            delete attn_proj;
-            delete mlp_normed;
-            delete mlp_gate;
-            delete mlp_up;
-            delete mlp_down;
-            delete mlp_out;
-            delete residual;
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer
-                      << ": Cleaned up intermediate tensors." << std::endl;
-
-            //* Logging
-            std::cerr << "[qwen2.cc:infer()] Layer " << layer << ": Completed."
-                      << std::endl;
         }
 
         //* 4. Final transform and output projection
         tensor final_norm
-            = createTensor({ntoken, model->meta.hs}, model->meta.dtype,
-                           model->device, model->device_id);
-        llaisysRmsNorm(final_norm, wordvec, model->weights.out_norm_w,
-                       model->meta.epsilon);
+            = Tensor::create({ntoken, model->meta.hs}, model->meta.dtype,
+                             model->device, model->device_id);
+        ops::rms_norm(final_norm, hidden_states,
+                      model->weights.out_norm_w->tensor, model->meta.epsilon);
         std::cerr << "[qwen2.cc:infer()] Completed final RMS norm."
                   << std::endl;
 
         //* 5. Get logits
         tensor logits
-            = createTensor({ntoken, model->meta.voc}, model->meta.dtype,
-                           model->device, model->device_id);
-        llaisysLinear(logits, final_norm, model->weights.out_embed, nullptr);
+            = Tensor::create({ntoken, model->meta.voc}, model->meta.dtype,
+                             model->device, model->device_id);
+        ops::linear(logits, final_norm, model->weights.out_embed->tensor,
+                    nullptr);
         std::cerr << "[qwen2.cc:infer()] Completed output projection to logits."
                   << std::endl;
 
         //* 6. Get the last token's logits and argmax
-        auto logits_output = logits->tensor->slice(
-            ntoken - 1, 0, model->meta.voc); // last token
         tensor last_token_logits
-            = createTensor(logits_output->shape(), model->meta.dtype,
-                           model->device, model->device_id);
-        last_token_logits->tensor = logits_output;
+            = logits->slice(ntoken - 1, 0, model->meta.voc); // last token
         std::cerr << "[qwen2.cc:infer()] Sliced out last token logits."
                   << std::endl;
         LOG_SHAPE("infer()", logits, "logits");
         LOG_SHAPE("infer()", last_token_logits, "last_token_logits");
 
         //* 7. Argmax to get next token id
-        tensor next_token_id_tensor = createTensor(
+        tensor next_token_id_tensor = Tensor::create(
             {1}, LLAISYS_DTYPE_I64, model->device, model->device_id);
-        tensor next_token_logits_tensor
-            = createTensor({1, model->meta.voc}, model->meta.dtype,
-                           model->device, model->device_id);
-        llaisysArgmax(next_token_id_tensor, next_token_logits_tensor,
-                      last_token_logits);
+        tensor next_token_logits_tensor = Tensor::create(
+            {1}, model->meta.dtype, model->device, model->device_id);
+        ops::argmax(next_token_id_tensor, next_token_logits_tensor,
+                    last_token_logits);
         std::cerr
             << "[qwen2.cc:infer()] Completed argmax to get next token id: "
-            << *((i64 *)next_token_id_tensor->tensor->data()) << std::endl;
+            << *((i64 *)next_token_id_tensor->data()) << std::endl;
 
-        //* 8. Clean up all tensors
-        delete input_ids;
-        delete wordvec;
-        delete pos_ids_tensor;
-        delete final_norm;
-        delete logits;
-        delete last_token_logits;
-        delete next_token_logits_tensor;
-
-        //* 9. Return next token id
-        i64 next_token_id = *((i64 *)next_token_id_tensor->tensor->data());
-        delete next_token_id_tensor;
-        return next_token_id;
+        return *((i64 *)next_token_id_tensor->data());
     }
 }
 

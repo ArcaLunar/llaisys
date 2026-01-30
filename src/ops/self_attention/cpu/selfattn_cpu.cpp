@@ -163,13 +163,13 @@ void self_attn(std::byte *attn_val,
               << std::endl;
     switch (dtype) {
     case LLAISYS_DTYPE_F32:
-        return self_attn_impl_without_openmp(
+        return self_attn_impl(
             recast(float *, attn_val), recast(const float *, q),
             recast(const float *, k), recast(const float *, v), seqlen,
             num_head, head_dim, kvlen, num_kv_head, vdim, scale);
 
     case LLAISYS_DTYPE_F16:
-        return self_attn_impl_without_openmp(
+        return self_attn_impl(
             recast(llaisys::fp16_t *, attn_val),
             recast(const llaisys::fp16_t *, q),
             recast(const llaisys::fp16_t *, k),
@@ -177,7 +177,7 @@ void self_attn(std::byte *attn_val,
             kvlen, num_kv_head, vdim, scale);
 
     case LLAISYS_DTYPE_BF16:
-        return self_attn_impl_without_openmp(
+        return self_attn_impl(
             recast(llaisys::bf16_t *, attn_val),
             recast(const llaisys::bf16_t *, q),
             recast(const llaisys::bf16_t *, k),

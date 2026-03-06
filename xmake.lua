@@ -39,6 +39,10 @@ target("llaisys-device")
     set_kind("static")
     add_deps("llaisys-utils")
     add_deps("llaisys-device-cpu")
+    -- link in the Nvidia device implementation when requested
+    if has_config("nv-gpu") then
+        add_deps("llaisys-device-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -143,7 +147,12 @@ target("llaisys")
     add_deps("llaisys-tensor")
     add_deps("llaisys-ops")
     add_deps("llaisys-kvcache")
+    -- include nvidia device library when enabled (llaisys-device already pulls it in)
     -- add_deps("llaisys-models")
+    if has_config("nv-gpu") then
+        -- link against CUDA runtime so __cudaRegisterLinkedBinary symbols resolve
+        add_links("cudart")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")

@@ -34,7 +34,13 @@ def load_hf_model(model_path=None, device_name="cpu"):
 
 
 def hf_infer(
-    prompt, tokenizer, model, max_new_tokens=128, top_p=0.8, top_k=50, temperature=0.8
+    prompt,
+    tokenizer,
+    model,
+    max_new_tokens=128,
+    top_p=0.8,
+    top_k=50,
+    temperature=0.8,
 ):
     input_content = tokenizer.apply_chat_template(
         conversation=[{"role": "user", "content": prompt}],

@@ -15,19 +15,44 @@ static void linear_impl(T *output,
 #pragma omp parallel for collapse(2) schedule(static)
     for (size_t n = 0; n < N; n++) {
         for (size_t k = 0; k < K; k++) {
-            long double sum = 0.0;
+            double sum = 0.0;
 
 #pragma omp simd reduction(+ : sum)
             for (size_t m = 0; m < M; m++)
+                sum += casting(double, input[n * M + m])
+                     * casting(double, weight[k * M + m]);
+
+            if (bias != nullptr)
+                sum += casting(double, bias[k]);
+            output[n * K + k] = casting(T, static_cast<float>(sum));
+        }
+    }
+}
+
+namespace linear::naive {
+
+template <typename T>
+void linear(T *output,
+            const T *input,
+            const T *weight,
+            const T *bias,
+            size_t N,
+            size_t M,
+            size_t K) {
+    for (size_t n = 0; n < N; n++) {
+        for (size_t k = 0; k < K; k++) {
+            long double sum = 0.0;
+            for (size_t m = 0; m < M; m++)
                 sum += casting(long double, input[n * M + m])
                      * casting(long double, weight[k * M + m]);
-
             if (bias != nullptr)
                 sum += casting(long double, bias[k]);
             output[n * K + k] = casting(T, static_cast<float>(sum));
         }
     }
 }
+
+} // namespace linear::naive
 
 namespace llaisys::ops::cpu {
 

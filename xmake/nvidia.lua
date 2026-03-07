@@ -16,3 +16,20 @@ target("llaisys-device-nvidia")
 
     on_install(function (target) end)
 target_end()
+
+target("llaisys-ops-nvidia")
+    set_kind("static")
+    set_policy("build.cuda.devlink", true)
+    set_languages("cxx17")
+    set_warnings("all", "error")
+    add_includedirs("../include")
+    if not is_plat("windows") then
+        add_cxflags("-fPIC", "-Wno-unknown-pragmas")
+        add_cuflags("-Xcompiler=-fPIC", "-Wno-unknown-pragmas")
+        add_culdflags("-Xcompiler=-fPIC")
+    end
+
+    add_files("../src/ops/*/nvidia/*.cu")
+
+    on_install(function (target) end)
+target_end()

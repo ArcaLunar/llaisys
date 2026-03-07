@@ -2,6 +2,9 @@
 #include "../../utils.hpp"
 #include "cpu/rope_cpu.hpp"
 #include "llaisys.h"
+#ifdef ENABLE_NVIDIA_API
+#include "nvidia/rope_cu.cuh"
+#endif
 
 namespace llaisys::ops {
 
@@ -18,6 +21,10 @@ void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
 
     if (in->deviceType() == LLAISYS_DEVICE_CPU) {
         ops::cpu::rope(out->data(), in->data(), pos_ids->data(), seqlen, num_head, head_dim, theta, in->dtype());
+#ifdef ENABLE_NVIDIA_API
+    } else if (in->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        ops::nvidia::rope(out->data(), in->data(), pos_ids->data(), seqlen, num_head, head_dim, theta, in->dtype());
+#endif
     } else
         EXCEPTION_UNSUPPORTED_DEVICE;
 }

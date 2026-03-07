@@ -1,6 +1,9 @@
 #include "op.hpp"
 #include "cpu/swiglu_cpu.hpp"
 #include "llaisys.h"
+#ifdef ENABLE_NVIDIA_API
+#include "nvidia/swiglu_cu.cuh"
+#endif
 
 namespace llaisys::ops {
 
@@ -14,6 +17,10 @@ void swiglu(tensor_t out, tensor_t gate, tensor_t up) {
 
     if (out->deviceType() == LLAISYS_DEVICE_CPU) {
         cpu::swiglu(out->data(), gate->data(), up->data(), out->numel(), out->dtype());
+#ifdef ENABLE_NVIDIA_API
+    } else if (out->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        nvidia::swiglu(out->data(), gate->data(), up->data(), out->numel(), out->dtype());
+#endif
     } else
         EXCEPTION_UNSUPPORTED_DEVICE;
 }

@@ -1,6 +1,9 @@
 #include "op.hpp"
 #include "cpu/embedding_cpu.hpp"
 #include "llaisys.h"
+#ifdef ENABLE_NVIDIA_API
+#include "nvidia/embedding_cu.cuh"
+#endif
 
 namespace llaisys::ops {
 void embedding(tensor_t out, tensor_t index, tensor_t weight) {
@@ -18,6 +21,11 @@ void embedding(tensor_t out, tensor_t index, tensor_t weight) {
     if (device == LLAISYS_DEVICE_CPU) {
         llaisys::ops::cpu::embedding(out->data(), index->data(), weight->data(), index->numel(), embedding_dim,
                                      out->dtype());
+#ifdef ENABLE_NVIDIA_API
+    } else if (device == LLAISYS_DEVICE_NVIDIA) {
+        llaisys::ops::nvidia::embedding(out->data(), index->data(), weight->data(), index->numel(), embedding_dim,
+                                        out->dtype());
+#endif
     } else
         EXCEPTION_UNSUPPORTED_DEVICE;
 }

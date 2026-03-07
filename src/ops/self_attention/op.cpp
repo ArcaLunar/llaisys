@@ -2,6 +2,9 @@
 #include "cpu/selfattn_cpu.hpp"
 #include "llaisys.h"
 #include <iostream>
+#ifdef ENABLE_NVIDIA_API
+#include "nvidia/selfattn_cu.cuh"
+#endif
 
 namespace llaisys::ops {
 void self_attention(
@@ -36,6 +39,12 @@ void self_attention(
         cpu::self_attn(attn_val->data(), q->data(), k->data(), v->data(),
                        seqlen, num_head, head_dim, kvlen, num_kv_head, vdim,
                        scale, attn_val->dtype());
+#ifdef ENABLE_NVIDIA_API
+    } else if (attn_val->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        nvidia::self_attn(attn_val->data(), q->data(), k->data(), v->data(),
+                          seqlen, num_head, head_dim, kvlen, num_kv_head, vdim,
+                          scale, attn_val->dtype());
+#endif
     } else
         EXCEPTION_UNSUPPORTED_DEVICE;
 }

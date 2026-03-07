@@ -3,6 +3,9 @@
 #include "cpu/rms_cpu.hpp"
 #include "llaisys.h"
 #include <cstddef>
+#ifdef ENABLE_NVIDIA_API
+#include "nvidia/rms_norm_cu.cuh"
+#endif
 
 namespace llaisys::ops {
 void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
@@ -14,6 +17,11 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
     if (out->deviceType() == LLAISYS_DEVICE_CPU) {
         llaisys::ops::cpu::rms_norm(out->data(), in->data(), weight->data(), out->shape()[0], out->shape()[1], eps,
                                     out->dtype());
+#ifdef ENABLE_NVIDIA_API
+    } else if (out->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        llaisys::ops::nvidia::rms_norm(out->data(), in->data(), weight->data(), out->shape()[0], out->shape()[1], eps,
+                                       out->dtype());
+#endif
     } else
         EXCEPTION_UNSUPPORTED_DEVICE;
 }

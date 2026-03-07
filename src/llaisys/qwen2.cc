@@ -511,7 +511,16 @@ __C {
                          "token id: "
                       << *((i64 *)next_token_id_tensor->data()) << std::endl;
 
-        return *((i64 *)next_token_id_tensor->data());
+        // NOTE: next_token_id_tensor may live on device memory (e.g. NVIDIA).
+        // Always copy to host before reading to avoid dereferencing a device
+        // pointer on CPU, which can cause a segmentation fault.
+        i64 next_token_id = -1;
+        llaisys::core::context().setDevice(model->device, model->device_id);
+        llaisys::core::context().runtime().api()->memcpy_sync(
+            &next_token_id, next_token_id_tensor->data(), sizeof(i64),
+            LLAISYS_MEMCPY_D2H);
+
+        return next_token_id;
     }
 }
 

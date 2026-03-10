@@ -41,13 +41,16 @@ class Qwen2:
         pos_ids = (ctypes.c_int64 * len(inputs))(*range(len(inputs)))
 
         # # Prefill and get first token
-        answer = inputs
-        output_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
+        answer = list(inputs)
+        output_token = LIB_LLAISYS.llaisysQwen2ModelInferSample(
             self._backend,
             array,
             pos_ids,
             len(inputs),
             True,  # prefill
+            int(top_k),
+            float(top_p),
+            float(temperature),
         )
         answer.append(output_token)
 
@@ -58,12 +61,15 @@ class Qwen2:
             array = (ctypes.c_int64 * 1)(*lst)
             pos_ids = (ctypes.c_int64 * 1)(*pos)
 
-            output_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
+            output_token = LIB_LLAISYS.llaisysQwen2ModelInferSample(
                 self._backend,
                 array,
                 pos_ids,
                 1,
                 False,  # decode
+                int(top_k),
+                float(top_p),
+                float(temperature),
             )
             answer.append(output_token)
 

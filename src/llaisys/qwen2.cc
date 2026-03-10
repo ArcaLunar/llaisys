@@ -88,6 +88,15 @@
 // array, etc.
 static void initializeArrays(LlaisysQwen2Model *model);
 
+static int64_t qwen2_infer_impl(struct LlaisysQwen2Model *model,
+                                int64_t *token_ids,
+                                int64_t *pos_ids,
+                                size_t ntoken,
+                                bool prefill,
+                                int top_k,
+                                float top_p,
+                                float temperature);
+
 __C {
 
     struct LlaisysQwen2Model {
@@ -247,8 +256,36 @@ __C {
     __export int64_t llaisysQwen2ModelInfer(
         struct LlaisysQwen2Model * model, int64_t *token_ids, int64_t *pos_ids,
         size_t ntoken, bool prefill) {
+        // Keep old API behavior: greedy decoding via top_k=1.
+        return qwen2_infer_impl(model, token_ids, pos_ids, ntoken, prefill,
+                                1, 1.0f, 1.0f);
+    }
+
+    __export int64_t llaisysQwen2ModelInferSample(
+        struct LlaisysQwen2Model * model, int64_t *token_ids, int64_t *pos_ids,
+        size_t ntoken, bool prefill, int top_k, float top_p,
+        float temperature) {
+        return qwen2_infer_impl(model, token_ids, pos_ids, ntoken, prefill,
+                                top_k, top_p, temperature);
+    }
+}
+
+static int64_t qwen2_infer_impl(struct LlaisysQwen2Model * model,
+                                int64_t *token_ids, int64_t *pos_ids,
+                                size_t ntoken, bool prefill, int top_k,
+                                float top_p, float temperature) {
         //* -1. Do checking
         MODEL_VALIDITY_CHECK(model);
+        if (ntoken == 0) {
+            std::cerr << "[qwen2.cc:infer()] ntoken must be > 0." << std::endl;
+            return -1;
+        }
+        if (top_k < 0 || top_p <= 0.0f || top_p > 1.0f || temperature <= 0.0f) {
+            std::cerr << "[qwen2.cc:infer()] Invalid sampling params: top_k="
+                      << top_k << ", top_p=" << top_p
+                      << ", temperature=" << temperature << std::endl;
+            return -1;
+        }
         if constexpr (DBG_LOG)
             std::cerr << "[qwen2.cc:infer()] Start inference." << std::endl;
 
@@ -499,15 +536,13 @@ __C {
         LOG_SHAPE("infer()", logits, "logits");
         LOG_SHAPE("infer()", last_token_logits, "last_token_logits");
 
-        //* 7. Argmax to get next token id
+        //* 7. Sample to get next token id (top_k=1 equals argmax)
         tensor next_token_id_tensor = Tensor::create(
             {1}, LLAISYS_DTYPE_I64, model->device, model->device_id);
-        tensor next_token_logits_tensor = Tensor::create(
-            {1}, model->meta.dtype, model->device, model->device_id);
-        ops::argmax(next_token_id_tensor, next_token_logits_tensor,
-                    last_token_logits);
+        ops::sample(next_token_id_tensor, last_token_logits, top_k, top_p,
+                    temperature);
         if constexpr (DBG_LOG)
-            std::cerr << "[qwen2.cc:infer()] Completed argmax to get next "
+            std::cerr << "[qwen2.cc:infer()] Completed sampling to get next "
                          "token id: "
                       << *((i64 *)next_token_id_tensor->data()) << std::endl;
 
@@ -519,9 +554,7 @@ __C {
         llaisys::core::context().runtime().api()->memcpy_sync(
             &next_token_id, next_token_id_tensor->data(), sizeof(i64),
             LLAISYS_MEMCPY_D2H);
-
-        return next_token_id;
-    }
+    return next_token_id;
 }
 
 static void initializeArrays(LlaisysQwen2Model *model) {

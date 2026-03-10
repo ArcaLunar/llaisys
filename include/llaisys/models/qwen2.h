@@ -53,6 +53,21 @@ __C {
     __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model,
                                             int64_t *token_ids, int64_t *pos_ids, size_t ntoken, bool prefill);
 
+    /**
+     * @brief Inference with configurable decoding strategy.
+     *
+     * This behaves the same as llaisysQwen2ModelInfer for prefill/decode flow,
+     * but selects the next token using temperature/top-k/top-p sampling.
+     *
+     * @param top_k        Keep only top-k tokens before sampling (0 = disabled).
+     * @param top_p        Nucleus threshold in (0, 1] (1.0 = disabled).
+     * @param temperature  Positive temperature scalar.
+     */
+    __export int64_t llaisysQwen2ModelInferSample(struct LlaisysQwen2Model * model,
+                                                  int64_t *token_ids, int64_t *pos_ids,
+                                                  size_t ntoken, bool prefill,
+                                                  int top_k, float top_p, float temperature);
+
     __export void llaisysQwen2SetWeights(struct LlaisysQwen2Model * model,
                                          int name, int layer_id,
                                          llaisysTensor_t tensor);

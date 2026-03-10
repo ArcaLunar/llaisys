@@ -537,23 +537,38 @@ static int64_t qwen2_infer_impl(struct LlaisysQwen2Model * model,
         LOG_SHAPE("infer()", last_token_logits, "last_token_logits");
 
         //* 7. Sample to get next token id (top_k=1 equals argmax)
-        tensor next_token_id_tensor = Tensor::create(
-            {1}, LLAISYS_DTYPE_I64, model->device, model->device_id);
-        ops::sample(next_token_id_tensor, last_token_logits, top_k, top_p,
+        // sample() currently supports CPU only; move logits to host when needed.
+        tensor sample_logits = last_token_logits;
+        if (last_token_logits->deviceType() != LLAISYS_DEVICE_CPU) {
+            sample_logits = Tensor::create(
+                last_token_logits->shape(), last_token_logits->dtype(),
+                LLAISYS_DEVICE_CPU, 0);
+            llaisys::core::context().setDevice(model->device, model->device_id);
+            llaisys::core::context().runtime().api()->memcpy_sync(
+                sample_logits->data(), last_token_logits->data(),
+                last_token_logits->numel() * last_token_logits->elementSize(),
+                LLAISYS_MEMCPY_D2H);
+        }
+
+        tensor next_token_id_tensor
+            = Tensor::create({1}, LLAISYS_DTYPE_I64, LLAISYS_DEVICE_CPU, 0);
+        ops::sample(next_token_id_tensor, sample_logits, top_k, top_p,
                     temperature);
         if constexpr (DBG_LOG)
             std::cerr << "[qwen2.cc:infer()] Completed sampling to get next "
                          "token id: "
                       << *((i64 *)next_token_id_tensor->data()) << std::endl;
 
-        // NOTE: next_token_id_tensor may live on device memory (e.g. NVIDIA).
-        // Always copy to host before reading to avoid dereferencing a device
-        // pointer on CPU, which can cause a segmentation fault.
+        // NOTE: keep a safe read path for both host/device output tensors.
         i64 next_token_id = -1;
-        llaisys::core::context().setDevice(model->device, model->device_id);
-        llaisys::core::context().runtime().api()->memcpy_sync(
-            &next_token_id, next_token_id_tensor->data(), sizeof(i64),
-            LLAISYS_MEMCPY_D2H);
+        if (next_token_id_tensor->deviceType() == LLAISYS_DEVICE_CPU) {
+            next_token_id = *((i64 *)next_token_id_tensor->data());
+        } else {
+            llaisys::core::context().setDevice(model->device, model->device_id);
+            llaisys::core::context().runtime().api()->memcpy_sync(
+                &next_token_id, next_token_id_tensor->data(), sizeof(i64),
+                LLAISYS_MEMCPY_D2H);
+        }
     return next_token_id;
 }
 

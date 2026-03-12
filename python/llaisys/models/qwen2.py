@@ -1,6 +1,6 @@
 import ctypes
 import json
-from typing import Sequence
+from typing import Iterator, Sequence
 from ..libllaisys import LIB_LLAISYS, LlaisysQwen2Meta
 from ..libllaisys import DeviceType, DataType
 from ..tensor import Tensor
@@ -37,46 +37,67 @@ class Qwen2:
         top_p: float = 0.8,
         temperature: float = 0.8,
     ):
+        answer = list(inputs)
+        for token in self.generate_stream(
+            inputs,
+            max_new_tokens=max_new_tokens,
+            top_k=top_k,
+            top_p=top_p,
+            temperature=temperature,
+        ):
+            answer.append(token)
+
+        return answer
+
+    def generate_stream(
+        self,
+        inputs: Sequence[int],
+        max_new_tokens: int = 128,
+        top_k: int = 1,
+        top_p: float = 0.8,
+        temperature: float = 0.8,
+    ) -> Iterator[int]:
+        if len(inputs) == 0 or max_new_tokens <= 0:
+            return
+
         array = (ctypes.c_int64 * len(inputs))(*inputs)
         pos_ids = (ctypes.c_int64 * len(inputs))(*range(len(inputs)))
 
-        # # Prefill and get first token
-        answer = list(inputs)
+        # Prefill and yield first token.
         output_token = LIB_LLAISYS.llaisysQwen2ModelInferSample(
             self._backend,
             array,
             pos_ids,
             len(inputs),
-            True,  # prefill
+            True,
             int(top_k),
             float(top_p),
             float(temperature),
         )
-        answer.append(output_token)
+        yield output_token
 
-        # # Decode loop
-        for step in tqdm(range(max_new_tokens - 1)):
-            lst = [answer[-1]]
-            pos = [len(answer) - 1]
-            array = (ctypes.c_int64 * 1)(*lst)
-            pos_ids = (ctypes.c_int64 * 1)(*pos)
+        # Decode loop: one token per step.
+        current_token = output_token
+        current_pos = len(inputs)
+        for _ in range(max_new_tokens - 1):
+            if current_token == self.meta.end_token:
+                break
 
+            array = (ctypes.c_int64 * 1)(current_token)
+            pos_ids = (ctypes.c_int64 * 1)(current_pos)
             output_token = LIB_LLAISYS.llaisysQwen2ModelInferSample(
                 self._backend,
                 array,
                 pos_ids,
                 1,
-                False,  # decode
+                False,
                 int(top_k),
                 float(top_p),
                 float(temperature),
             )
-            answer.append(output_token)
-
-            if output_token == self.meta.end_token:
-                break
-
-        return answer
+            yield output_token
+            current_token = output_token
+            current_pos += 1
 
     def __load_config(self, config_path: Path):
         with open(config_path, "r") as f:
@@ -184,7 +205,7 @@ class Qwen2:
                     )
 
     def generate_no_decode(self, inputs: Sequence[int], max_new_tokens: int):
-        answer = inputs
+        answer = list(inputs)
         for step in tqdm(range(max_new_tokens), desc="Generating"):
             array = (ctypes.c_int64 * len(answer))(*answer)
             pos_ids = (ctypes.c_int64 * len(answer))(*range(len(answer)))

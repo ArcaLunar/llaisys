@@ -1,9 +1,12 @@
 import os
 import time
-from dataclasses import dataclass
+import json
+import threading
+from dataclasses import dataclass, field
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from transformers import AutoTokenizer
 
@@ -56,6 +59,7 @@ class ChatCompletionResponse(BaseModel):
 class ChatRuntime:
     tokenizer: AutoTokenizer
     model: Qwen2
+    lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 def _render_prompt(messages: list[ChatMessage], tokenizer: AutoTokenizer) -> str:
@@ -78,6 +82,10 @@ def _decode_new_text(tokenizer: AutoTokenizer, all_tokens: list[int], prompt_len
     return tokenizer.decode(all_tokens[prompt_len:], skip_special_tokens=True)
 
 
+def _sse(event: dict) -> str:
+    return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
 def create_app(runtime: ChatRuntime) -> FastAPI:
     app = FastAPI(title="LLAISYS Chat Server", version="0.1.0")
 
@@ -86,29 +94,88 @@ def create_app(runtime: ChatRuntime) -> FastAPI:
         return {"status": "ok"}
 
     @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
-    def chat_completions(req: ChatCompletionRequest) -> ChatCompletionResponse:
-        if req.stream:
-            raise HTTPException(status_code=400, detail="stream=true is not supported yet")
+    def chat_completions(req: ChatCompletionRequest):
         if not req.messages:
             raise HTTPException(status_code=400, detail="messages must not be empty")
 
         prompt = _render_prompt(req.messages, runtime.tokenizer)
         prompt_tokens = runtime.tokenizer.encode(prompt)
 
-        generated_tokens = runtime.model.generate(
-            prompt_tokens,
-            max_new_tokens=req.max_tokens,
-            top_k=req.top_k,
-            top_p=req.top_p,
-            temperature=req.temperature,
-        )
+        created = int(time.time())
+        response_id = f"chatcmpl-{int(time.time() * 1000)}"
+
+        if req.stream:
+            def event_stream():
+                with runtime.lock:
+                    yield _sse({
+                        "id": response_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": req.model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"role": "assistant"},
+                            "finish_reason": None,
+                        }],
+                    })
+
+                    generated = []
+                    last_text = ""
+                    for token in runtime.model.generate_stream(
+                        prompt_tokens,
+                        max_new_tokens=req.max_tokens,
+                        top_k=req.top_k,
+                        top_p=req.top_p,
+                        temperature=req.temperature,
+                    ):
+                        generated.append(token)
+                        current_text = runtime.tokenizer.decode(generated, skip_special_tokens=True)
+                        delta_text = current_text[len(last_text):]
+                        if not delta_text:
+                            continue
+                        last_text = current_text
+                        yield _sse({
+                            "id": response_id,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": req.model,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {"content": delta_text},
+                                "finish_reason": None,
+                            }],
+                        })
+
+                    yield _sse({
+                        "id": response_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": req.model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {},
+                            "finish_reason": "stop",
+                        }],
+                    })
+                    yield "data: [DONE]\n\n"
+
+            return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+        with runtime.lock:
+            generated_tokens = runtime.model.generate(
+                prompt_tokens,
+                max_new_tokens=req.max_tokens,
+                top_k=req.top_k,
+                top_p=req.top_p,
+                temperature=req.temperature,
+            )
 
         answer_text = _decode_new_text(runtime.tokenizer, generated_tokens, len(prompt_tokens))
         completion_tokens = max(0, len(generated_tokens) - len(prompt_tokens))
 
         return ChatCompletionResponse(
-            id=f"chatcmpl-{int(time.time() * 1000)}",
-            created=int(time.time()),
+            id=response_id,
+            created=created,
             model=req.model,
             choices=[
                 ChatCompletionChoice(
